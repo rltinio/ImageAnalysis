@@ -400,7 +400,7 @@ def get_nuclei_position(masks):
 
     cell_coords = []
 
-    for maski in np.delete(np.unique(masks),0):
+    for maski in np.unique(masks):
         
         single_mask = extract_masks(masks, maski)
 
