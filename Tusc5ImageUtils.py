@@ -4,7 +4,10 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from scipy.ndimage import center_of_mass
 from scipy.spatial import ConvexHull, distance_matrix
+from scipy.signal import find_peaks
 from skimage.measure import label, regionprops
+import pandas as pd
+#from cellpose import utils, io, plot, models, denoise
 
 
 ### FREQUENTLY USED FUNCTIONS ###
@@ -320,6 +323,142 @@ def nucleus_com(single_channel, masks):
 
     com_3d = (int(com[0]), int(com[1]), z_max_idx)
     return com_3d
+
+def extract_square_proj_expand(image, single_mask, extra_pixels = 50):
+    '''
+    Modification of upload_training_cells
+
+    Usually modularity is important, however it's better that these functions feed into one another
+    '''
+
+    DAPI_stack, WGA_stack = image[:, 0, :, :], image[:, 2, :, :]
+
+    _, _, comzi = nucleus_com(DAPI_stack, single_mask)  # Gets the nucleus stack of the middle of the cell
+
+    sq_maski = square_mask(single_mask)
+
+    # Calculate the bounding box of the square mask
+    min_row, min_col, max_row, max_col = regionprops(sq_maski.astype(int))[0].bbox
+
+    # Dimensions of the region of interest
+    roi_height = max_row - min_row
+    roi_width = max_col - min_col
+
+    # Dimensions of the new canvas with extra space
+    new_height = roi_height + 2 * extra_pixels 
+    new_width = roi_width + 2 * extra_pixels 
+ 
+    # Create new black canvas (filled with zeros)
+    new_WGA_slice = np.zeros((new_height, new_width), dtype=WGA_stack.dtype)
+    new_DAPI_slice = np.zeros((new_height, new_width), dtype=DAPI_stack.dtype)
+
+    # Calculate the placement of the ROI in the new canvas
+    new_min_row = extra_pixels 
+    new_min_col = extra_pixels 
+ 
+    # Extract the region of interest and place it in the center of the new canvas
+    sq_WGA_slice = WGA_stack[comzi, min_row:max_row, min_col:max_col]
+    new_WGA_slice[new_min_row:new_min_row + roi_height, new_min_col:new_min_col + roi_width] = sq_WGA_slice
+
+    return new_WGA_slice
+
+def remove_pixels_from_edges(array, pixels_to_remove):
+    """
+    Removes a specified number of pixels from each edge of the array.
+
+    Parameters:
+    - array (np.ndarray): The input array (2D or 3D).
+    - pixels_to_remove (int): The number of pixels to remove from each edge.
+
+    Returns:
+    - np.ndarray: The resulting array with reduced size.
+    """
+    if len(array.shape) == 2:
+        # For 2D arrays
+        rows, cols = array.shape
+        return array[pixels_to_remove:rows-pixels_to_remove, pixels_to_remove:cols-pixels_to_remove]
+    elif len(array.shape) == 3:
+        # For 3D arrays
+        depth, rows, cols = array.shape
+        return array[:, pixels_to_remove:rows-pixels_to_remove, pixels_to_remove:cols-pixels_to_remove]
+    else:
+        raise ValueError("Array must be 2D or 3D")
+    
+def get_sq_stacks(image, single_mask):
+    sq_maski = square_mask(single_mask)
+
+    # Extract bounding box around the mask
+    min_row, min_col, max_row, max_col = regionprops(sq_maski.astype(int))[0].bbox
+
+    sq_DAPI_stack = image[:,0, min_row:max_row, min_col:max_col]
+    sq_eGFP_stack = image[:,1, min_row:max_row, min_col:max_col]
+    sq_WGA_stack = image[:,2, min_row:max_row, min_col:max_col]
+    sq_GLUT1_stack = image[:,3, min_row:max_row, min_col:max_col]
+
+    sq_stacks = np.stack((sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack))
+
+    return sq_stacks
+
+# sq_stack and mask
+def get_traces(sq_stacks, single_mask):
+    sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack = sq_stacks
+
+    # Retrieving values in a vectorized manner
+    stacks = np.array([sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack])
+    masked_stacks = stacks * single_mask
+    summed_values = np.sum(masked_stacks, axis=(-1, -2))  # Sum along the spatial dimensions
+
+    # Store the results with corresponding channel names
+    channel_names = ['WGA', 'DAPI', 'eGFP', 'GluT1']
+    result = {name: value for name, value in zip(channel_names, summed_values)}
+
+    return result
+
+import numpy as np
+
+def remove_boundary(array, pixels_to_remove):
+    """
+    Removes a specified number of pixels from each edge of the array.
+
+    Parameters:
+    - array (np.ndarray): The input array (2D or 3D).
+    - pixels_to_remove (int): The number of pixels to remove from each edge.
+
+    Returns:
+    - np.ndarray: The resulting array with reduced size.
+    """
+    if len(array.shape) == 2:
+        # For 2D arrays
+        rows, cols = array.shape
+        return array[pixels_to_remove:rows-pixels_to_remove, pixels_to_remove:cols-pixels_to_remove]
+    elif len(array.shape) == 3:
+        # For 3D arrays
+        depth, rows, cols = array.shape
+        return array[:, pixels_to_remove:rows-pixels_to_remove, pixels_to_remove:cols-pixels_to_remove]
+    else:
+        raise ValueError("Array must be 2D or 3D")
+    
+def organize_data(trace_results, mask_id):
+    
+    summed_values_list = []
+    mask_id_list = []
+    channel_list = []
+
+    for channel_name, summed_values in trace_results.items():
+            summed_values_list.append(summed_values.tolist())
+            mask_id_list.append(mask_id)
+            channel_list.append(channel_name)
+
+    # Create a DataFrame from the collected data
+    data = {
+        'Y_vals': summed_values_list,
+        'mask_id': mask_id_list,
+        'Stain': channel_list
+    }
+    df = pd.DataFrame(data)
+
+    return df
+
 
 ### COORDINATE FUNCTIONS ###
 
