@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from scipy.ndimage import center_of_mass
 from scipy.spatial import ConvexHull, distance_matrix
+from skimage.measure import label, regionprops
+
 
 ### FREQUENTLY USED FUNCTIONS ###
 
@@ -77,6 +79,34 @@ def extract_masks(total_masks, points, reset_mask_ids=True):
 
     return mod_masks
 
+def get_mask_diameter(mask):
+    """
+    Calculate the diameter of a binary mask, defined as the maximum distance
+    between any two points on the boundary of the mask.
+
+    Parameters:
+    - mask: 2D numpy array (binary mask).
+
+    Returns:
+    - diameter: The maximum distance between any two boundary points in the mask.
+    """
+    # Label connected regions in the binary mask
+    labeled_mask = label(mask)
+    
+    # Ensure the mask contains only one region (consider the largest if there are multiple)
+    largest_region = max(regionprops(labeled_mask), key=lambda r: r.area)
+    
+    # Get the coordinates of the boundary of the largest region
+    boundary_coords = largest_region.coords
+    
+    # Calculate all pairwise distances between boundary points
+    distances = np.linalg.norm(boundary_coords[:, np.newaxis] - boundary_coords, axis=2)
+    
+    # Get the maximum distance found
+    diameter = np.max(distances)
+    
+    return diameter
+
 '''
 Somehow this code below is slower than the one above. They do the same thing
 '''
@@ -105,11 +135,11 @@ def cell_projector(single_channel, masks, nuclei_z_indicies):
     max_average = int(np.sum(nuclei_z_indicies)/len(nuclei_z_indicies))
     edited_image = single_channel[max_average].copy()
     base_image_display = single_channel[max_average].copy()
-    total_masks = np.delete(np.unique(masks,0),0)
+    total_masks = np.delete(np.unique(masks,0),0) - 1
 
     for mask in total_masks:
         single_mask = masks == mask
-        single_slice = nuclei_z_indicies[mask-1]
+        single_slice = nuclei_z_indicies[mask]
         edited_image[single_mask] = single_channel[single_slice][single_mask]
 
     return base_image_display, edited_image
@@ -129,22 +159,6 @@ def plot_before_after(before_image, after_image, auto_bc = False):
     axs[1].imshow(after_image)
     axs[1].axis('off')
     axs[1].set_title('Edited Image')
-
-# def to_8bit(image, do_scaling=True):
-#     if image.dtype != np.uint16:
-#         raise ValueError("Input image must be of dtype np.uint16")
-    
-#     output_image = np.zeros(image.shape, dtype=np.uint8)
-    
-#     if do_scaling:
-#         min_val = image.min()
-#         max_val = image.max()
-#         scale = 256.0 / (max_val - min_val + 1)
-#         output_image = ((image - min_val) * scale).clip(0, 255).astype(np.uint8)
-#     else:
-#         output_image = image.clip(0, 255).astype(np.uint8)
-    
-#     return output_image
 
 def to_8bit(image, do_scaling=True):
     # Ensure the input image is a NumPy array
@@ -238,20 +252,6 @@ def plot_maskids(center_of_masses, text_color:str = 'red', font_size:int = 5):
 
 ### Projection ###
 
-# def cell_projector(single_channel, masks, nuclei_z_indicies):
-    
-#     max_average = int(np.sum(total_nuclei_slices)/len(total_nuclei_slices))
-#     edited_image = single_channel[max_average].copy()
-#     base_image_display = single_channel[max_average].copy()
-#     total_masks = np.delete(np.unique(masks,0),0)
-
-#     for mask in total_masks:
-#         single_mask = masks == mask
-#         single_slice = nuclei_z_indicies[mask-1]
-#         edited_image[single_mask] = single_channel[single_slice][single_mask]
-
-#     return base_image_display, edited_image
-
 
 def square_mask(mask, perc_increase: int = 40):
     labeled_mask = measure.label(mask)
@@ -288,13 +288,13 @@ def WGA_projector(DAPI_stack, WGA_stack, single_mask, z_sep):
 
     sq_stack = WGA_stack[min_slice:max_slice] * sq_maski
 
-    sq_stack = ~auto_brightness_contrast(max_proj(~sq_stack))
+    sq_stack = ~(max_proj(~sq_stack))
 
     return sq_stack, sq_maski
 
 def WGA_stitcher(DAPI_stack, WGA_stack, masks, z_sep):
     z_avg = int(np.mean(nuclei_slices(DAPI_stack, masks)))
-    base_stack = auto_brightness_contrast(WGA_stack[z_avg])
+    base_stack = (WGA_stack[z_avg])
 
     total_masks = np.delete(np.unique(masks), 0)
 
@@ -304,8 +304,6 @@ def WGA_stitcher(DAPI_stack, WGA_stack, masks, z_sep):
         if sq_stacki is not None:
             base_stack[sq_maski] = sq_stacki[sq_maski]
 
-    plt.imshow(base_stack)
-    plt.axis('off')
     return base_stack
 
 def nucleus_com(single_channel, masks):
@@ -428,3 +426,67 @@ def plot_centers_of_mass(centers_of_mass):
     ax.view_init(25, 45)
 
     plt.show()
+
+# Accumulating Data
+
+def extract_information(filename):
+
+    '''
+    Extracts info from the .nd2 filename 
+    '''
+
+    file_base = filename.rsplit('.', 1)[0]
+    base_name = file_base.split('_')[0]
+    
+    DJID = base_name[:4]
+    eye = base_name[4]
+
+    return DJID, eye, file_base
+
+
+def plot_single_cell(single_cell):
+
+    '''
+    Takes dataframe containing traces of a single cell
+
+    Example:
+    dataframe.query('cell_unid == 90')
+
+    '''
+    single_cell['Stain'] = single_cell['Stain'].apply(lambda x: 'GluT1' if x == 'GluT1' else x)
+    
+    stain_colors = {'WGA': 'grey', 'eGFP': 'green', 'GluT1': 'magenta', 'DAPI': 'blue'}
+
+    plt.rcParams["axes.spines.right"] = False
+    plt.rcParams["axes.spines.top"] = False
+    plt.rcParams["axes.spines.bottom"] = True
+
+    plt.figure(figsize=(22, 15))
+
+    for index, row in single_cell.iterrows():
+        stain_color = stain_colors.get(row['Stain'], 'gray')
+        plt.plot(row['X_vals'], row['Y_vals'], linestyle='-', label=row['Stain'], color=stain_color, linewidth=10)
+        
+        # Peak picking for each line
+        peaks, _ = find_peaks(row['Y_vals'], prominence=15, distance=20)
+        x_peak = np.array(row['X_vals'])[peaks]
+        y_peak = np.array(row['Y_vals'])[peaks]
+        plt.plot(x_peak, y_peak, 'x', color=stain_color, linewidth=2)
+
+    plt.xlabel('Depth (micron)', fontsize=60)
+    plt.ylabel('Y Axis', fontsize=60)
+
+    plt.yticks(fontsize=60)
+    plt.xticks(fontsize=60)
+    plt.xlabel('Depth (µm)', fontsize=60)
+    plt.ylabel('Fluorescence (a.u)', fontsize=60)
+    plt.title('All Stains of a Single Cell', fontsize = 65)
+    plt.legend(fontsize = 45)
+
+    ax = plt.gca()
+    ax.spines['left'].set_linewidth(3)
+    ax.spines['bottom'].set_linewidth(3)
+
+    plt.tight_layout()
+    plt.show()
+    
