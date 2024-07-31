@@ -254,138 +254,73 @@ def plot_maskids(center_of_masses, text_color:str = 'red', font_size:int = 5):
 
 
 def square_mask(mask, perc_increase: int = 40):
-    """
-    Create a square mask around the largest region of interest in a binary mask.
-    Ensures the mask stays within the bounds of the image.
-
-    Parameters:
-    - mask: 2D numpy array (binary mask).
-    - perc_increase: Percentage to increase the diameter of the square.
-
-    Returns:
-    - new_mask: 2D numpy array with the square mask.
-    """
-    # Label connected regions in the binary image
     labeled_mask = measure.label(mask)
-
-    # Measure region properties
     regions = measure.regionprops(labeled_mask)
-
-    # Assume the largest region is the object of interest
     largest_region = max(regions, key=lambda r: r.area)
 
-    # Get the coordinates of the largest region's convex hull
-    coords = largest_region.coords
-    hull = ConvexHull(coords)
-
-    # Extract the points from the convex hull
-    hull_points = coords[hull.vertices]
-
-    # Compute all pairwise distances between hull points
-    distances = distance_matrix(hull_points, hull_points)
-
-    # Find the pair of points with the maximum distance
-    max_dist_indices = np.unravel_index(np.argmax(distances), distances.shape)
-    point1 = hull_points[max_dist_indices[0]]
-    point2 = hull_points[max_dist_indices[1]]
-
-    # Get the equivalent diameter and centroid
-    diameter = np.linalg.norm(point1 - point2)
+    min_row, min_col, max_row, max_col = largest_region.bbox
     centroid = largest_region.centroid
 
-    # Increase the diameter by however much
+    height = max_row - min_row
+    width = max_col - min_col
+    diameter = max(height, width)
     new_diameter = diameter * (1 + perc_increase / 100)
+    half_side = new_diameter / 2
 
-    # Calculate the size of the square side
-    square_side = new_diameter
+    top_left = (int(centroid[0] - half_side), int(centroid[1] - half_side))
+    bottom_right = (int(centroid[0] + half_side), int(centroid[1] + half_side))
 
-    # Calculate the top-left and bottom-right coordinates of the square
-    top_left = (int(centroid[0] - square_side / 2), int(centroid[1] - square_side / 2))
-    bottom_right = (int(centroid[0] + square_side / 2), int(centroid[1] + square_side / 2))
-
-    # Ensure the coordinates are within the image bounds
     top_left = (max(top_left[0], 0), max(top_left[1], 0))
     bottom_right = (min(bottom_right[0], mask.shape[0]), min(bottom_right[1], mask.shape[1]))
 
-    # Create a new mask with the square
     new_mask = np.zeros_like(mask)
     new_mask[top_left[0]:bottom_right[0], top_left[1]:bottom_right[1]] = 1
 
     return new_mask
 
 def WGA_projector(DAPI_stack, WGA_stack, single_mask, z_sep):
-        
-        sq_maski = square_mask(single_mask, perc_increase = 10)
+    sq_maski = square_mask(single_mask, perc_increase=10)
+    comzi = nucleus_com(DAPI_stack, single_mask)
 
-        _, _, comzi = nucleus_com(DAPI_stack, single_mask) # Gets the nucleus stack of the middle of the cell
+    above_and_below = int(0.5 / z_sep)
+    min_slice = max(0, comzi[2] - above_and_below)
+    max_slice = min(WGA_stack.shape[0], comzi[2] + above_and_below + 1)
 
-        #Looking for .5 microns above and below
-        above_and_below = .6 // z_sep
+    sq_stack = WGA_stack[min_slice:max_slice] * sq_maski
 
-        max_slice = int(comzi + above_and_below)
-        min_slice = int(comzi - above_and_below)
+    sq_stack = ~auto_brightness_contrast(max_proj(~sq_stack))
 
-        '''
-        1. Takes the slices spanning the cell (0.5 microns above and below) and the slices within the square mask
-        2. Take the max projection (image inversion if necessary)
-        3. Auto brightness and contrast
-
-        Returns the max projection of slice
-        '''
-        sq_stack = WGA_stack[min_slice : max_slice] * sq_maski
-
-        sq_stack = ~auto_brightness_contrast(max_proj(~sq_stack)) # Need to add ~ to invert intensities, then ~ to revert back to normal
-
-        # Take the square ROI of the stack and attach it to a larger image
-
-        return sq_stack, sq_maski
+    return sq_stack, sq_maski
 
 def WGA_stitcher(DAPI_stack, WGA_stack, masks, z_sep):
+    z_avg = int(np.mean(nuclei_slices(DAPI_stack, masks)))
+    base_stack = auto_brightness_contrast(WGA_stack[z_avg])
 
-    # Background
-    z_avg = np.mean(nuclei_slices(DAPI_stack, masks)).astype(int)
-    base_stack = auto_brightness_contrast(WGA_stack.copy()[z_avg])
-
-    total_masks = np.delete(np.unique(masks,0),0)
+    total_masks = np.delete(np.unique(masks), 0)
 
     for mask_num in total_masks:
         maski = masks == mask_num
-
         sq_stacki, sq_maski = WGA_projector(DAPI_stack, WGA_stack, maski, z_sep)
-        base_stack[sq_maski] = sq_stacki[sq_maski]
+        if sq_stacki is not None:
+            base_stack[sq_maski] = sq_stacki[sq_maski]
 
     plt.imshow(base_stack)
     plt.axis('off')
     return base_stack
 
 def nucleus_com(single_channel, masks):
-    """
-    RETURNS ONE POINT
+    total_masks = np.delete(np.unique(masks), 0)
 
-    Returns the (x, y, z) coordinates of the center of mass for each mask.
+    mask = total_masks[0]
+    single_mask = masks == mask
+    masked_channel = single_channel * single_mask
 
-    :param single_channel: 3D numpy array (slices, height, width) of a single channel.
-    :param masks: 3D numpy array (same shape as single_channel) with mask labels.
-    :return: List of tuples containing (x, y, z) coordinates of the center of mass.
-    """
-    total_masks = np.delete(np.unique(masks,0),0)
-    
+    z_prof = np.sum(masked_channel, axis=(1, 2))
+    z_max_idx = np.argmax(z_prof)
 
-    for mask in total_masks:
-        single_mask = masks == mask
+    com = center_of_mass(single_mask)
 
-        masked_channel = single_channel * single_mask
-
-        z_prof = np.sum(masked_channel, axis = (1,2))
-        
-        z_max_idx = np.argmax(z_prof)
-
-        # Calculate the center of mass for the mask
-        com = center_of_mass(single_mask)
-        
-        # The z coordinate of the center of mass is determined by the slice with the max intensity
-        com_3d = (int(com[0]), int(com[1]), z_max_idx)
-
+    com_3d = (int(com[0]), int(com[1]), z_max_idx)
     return com_3d
 
 ### COORDINATE FUNCTIONS ###
