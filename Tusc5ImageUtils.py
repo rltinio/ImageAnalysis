@@ -130,18 +130,43 @@ def plot_before_after(before_image, after_image, auto_bc = False):
     axs[1].axis('off')
     axs[1].set_title('Edited Image')
 
-def to_8bit(image, do_scaling=True):
-    if image.dtype != np.uint16:
-        raise ValueError("Input image must be of dtype np.uint16")
+# def to_8bit(image, do_scaling=True):
+#     if image.dtype != np.uint16:
+#         raise ValueError("Input image must be of dtype np.uint16")
     
+#     output_image = np.zeros(image.shape, dtype=np.uint8)
+    
+#     if do_scaling:
+#         min_val = image.min()
+#         max_val = image.max()
+#         scale = 256.0 / (max_val - min_val + 1)
+#         output_image = ((image - min_val) * scale).clip(0, 255).astype(np.uint8)
+#     else:
+#         output_image = image.clip(0, 255).astype(np.uint8)
+    
+#     return output_image
+
+def to_8bit(image, do_scaling=True):
+    # Ensure the input image is a NumPy array
+    image = np.asarray(image)
+    
+    # Initialize the output image with zeros, of dtype np.uint8
     output_image = np.zeros(image.shape, dtype=np.uint8)
     
     if do_scaling:
+        # Determine the min and max values from the image
         min_val = image.min()
         max_val = image.max()
-        scale = 256.0 / (max_val - min_val + 1)
-        output_image = ((image - min_val) * scale).clip(0, 255).astype(np.uint8)
+        
+        # Avoid division by zero if min_val == max_val
+        if max_val > min_val:
+            scale = 255.0 / (max_val - min_val)
+            output_image = ((image - min_val) * scale).clip(0, 255).astype(np.uint8)
+        else:
+            # If the image has a single value, map it to 0 or 255
+            output_image.fill(255 if min_val > 0 else 0)
     else:
+        # If not scaling, ensure the values are within the 0-255 range
         output_image = image.clip(0, 255).astype(np.uint8)
     
     return output_image
