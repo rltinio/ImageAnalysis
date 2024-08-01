@@ -527,6 +527,55 @@ def remove_outliers_3D(data):
     
     return filtered_data
 
+def remove_outliers_local(centers_of_mass, num_closest_points=20, z_threshold=2):
+    """
+    Removes points that are outliers based on the z-values of their closest neighbors.
+
+    :param centers_of_mass: List of tuples containing (x, y, z) coordinates of the centers of mass.
+    :param num_closest_points: Number of closest points to consider for outlier detection.
+    :param z_threshold: Number of standard deviations from the mean z-value to consider as an outlier.
+
+    :return: Tuple containing filtered list of (x, y, z) coordinates and the indices of the filtered points.
+    """
+    if num_closest_points >= len(centers_of_mass):
+        raise ValueError("num_closest_points must be less than the number of total points")
+
+    filtered_data = []
+    filtered_indices = []
+    xs = np.array([coord[0] for coord in centers_of_mass])
+    ys = np.array([coord[1] for coord in centers_of_mass])
+    zs = np.array([coord[2] for coord in centers_of_mass])
+
+    for i, (x, y, z) in enumerate(centers_of_mass):
+        # Calculate distances from the current point to all other points
+        distances = np.sqrt((xs - x)**2 + (ys - y)**2 + (zs - z)**2)
+
+        # Get indices of the closest points, excluding the point itself
+        closest_indices = distances.argsort()[1:num_closest_points+1]
+
+        # Calculate mean and standard deviation of the z-values of these closest points
+        z_closest = zs[closest_indices]
+        mean_z = np.mean(z_closest)
+        std_dev_z = np.std(z_closest)
+
+        # Check if the current point is an outlier in z-value
+        if abs(z - mean_z) <= z_threshold * std_dev_z:
+            filtered_data.append((x, y, z))
+            filtered_indices.append(i)
+
+    return filtered_data, filtered_indices
+
+def remove_associated_masks(masks, filtered_indices):
+    """
+    Removes masks associated with the filtered coordinates.
+
+    :param masks: List of masks.
+    :param filtered_indices: Indices of the coordinates that are not outliers.
+
+    :return: Filtered list of masks.
+    """
+    return [masks[i] for i in filtered_indices]
+
 def plot_3d_points(centers_of_mass, view_angle = (45, 45)):
     """
     Plots the (x, y, z) coordinates of the centers of mass.
@@ -546,7 +595,7 @@ def plot_3d_points(centers_of_mass, view_angle = (45, 45)):
     ax.set_ylabel('Y Coordinate')
     ax.set_zlabel('Z Coordinate')
     ax.set_zlim(0,108)
-    ax.view_init(views[0], views[1])
+    ax.view_init(view_angle[0], view_angle[1])
 
     plt.show()
 
