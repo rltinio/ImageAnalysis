@@ -8,6 +8,10 @@ from scipy.signal import find_peaks
 from skimage.measure import label, regionprops
 import pandas as pd
 #from cellpose import utils, io, plot, models, denoise
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
 
 
 ### FREQUENTLY USED FUNCTIONS ###
@@ -146,22 +150,6 @@ def cell_projector(single_channel, masks, nuclei_z_indicies):
         edited_image[single_mask] = single_channel[single_slice][single_mask]
 
     return base_image_display, edited_image
-
-def plot_before_after(before_image, after_image, auto_bc = False):
-
-    if auto_bc == True:
-        before_image = auto_brightness_contrast(before_image)
-        after_image = auto_brightness_contrast(after_image)
-
-    fig, axs = plt.subplots(1,2)
-
-    axs[0].imshow(before_image)
-    axs[0].axis('off')
-    axs[0].set_title('Base Image')
-
-    axs[1].imshow(after_image)
-    axs[1].axis('off')
-    axs[1].set_title('Edited Image')
 
 def to_8bit(image, do_scaling=True):
     # Ensure the input image is a NumPy array
@@ -309,17 +297,13 @@ def WGA_stitcher(DAPI_stack, WGA_stack, masks, z_sep):
 
     return base_stack
 
-def nucleus_com(single_channel, masks):
-    total_masks = np.delete(np.unique(masks), 0)
-
-    mask = total_masks[0]
-    single_mask = masks == mask
-    masked_channel = single_channel * single_mask
+def nucleus_com(single_channel, mask):
+    masked_channel = single_channel * mask
 
     z_prof = np.sum(masked_channel, axis=(1, 2))
     z_max_idx = np.argmax(z_prof)
 
-    com = center_of_mass(single_mask)
+    com = center_of_mass(mask)
 
     com_3d = (int(com[0]), int(com[1]), z_max_idx)
     return com_3d
@@ -328,7 +312,7 @@ def extract_square_proj_expand(image, single_mask, extra_pixels = 50):
     '''
     Modification of upload_training_cells
 
-    Usually modularity is important, however it's better that these functions feed into one another
+    Usually modularity is important, however it's more practical that these functions feed into one another here
     '''
 
     DAPI_stack, WGA_stack = image[:, 0, :, :], image[:, 2, :, :]
@@ -484,10 +468,10 @@ def nuclei_centers_of_mass(single_channel, masks):
         z_max_idx = np.argmax(z_prof)
 
         # Calculate the center of mass for the mask
-        center_of_mass = center_of_mass(single_mask)
+        com = center_of_mass(single_mask)
         
         # The z coordinate of the center of mass is determined by the slice with the max intensity
-        center_of_mass_3d = (int(center_of_mass[0]), int(center_of_mass[1]), z_max_idx)
+        center_of_mass_3d = (int(com[0]), int(com[1]), z_max_idx)
 
         centers_of_mass.append(center_of_mass_3d)
 
@@ -507,13 +491,13 @@ def get_nuclei_position(masks):
 
 def remove_outliers(data):
     """
-    Remove numbers from the list that have a standard deviation greater than 1 from the mean.
+    Remove numbers from the list that have a standard deviation greater than 2 from the mean.
 
     :param data: List of numbers.
     :return: List of numbers with outliers removed.
     """
     mean = np.mean(data)
-    std_dev = np.std(data)
+    std_dev = np.std(data) * 2
 
     # Define the lower and upper bounds
     lower_bound = mean - std_dev
@@ -532,7 +516,7 @@ def remove_outliers_3D(data):
     Z_idxs = [i[2] for i in data]
 
     mean = np.mean(Z_idxs)
-    std_dev = np.std(Z_idxs)
+    std_dev = np.std(Z_idxs) * 2
 
     # Define the lower and upper bounds
     lower_bound = mean - std_dev
@@ -543,7 +527,7 @@ def remove_outliers_3D(data):
     
     return filtered_data
 
-def plot_centers_of_mass(centers_of_mass):
+def plot_3d_points(centers_of_mass, view_angle = (45, 45)):
     """
     Plots the (x, y, z) coordinates of the centers of mass.
 
@@ -562,11 +546,46 @@ def plot_centers_of_mass(centers_of_mass):
     ax.set_ylabel('Y Coordinate')
     ax.set_zlabel('Z Coordinate')
     ax.set_zlim(0,108)
-    ax.view_init(25, 45)
+    ax.view_init(views[0], views[1])
 
     plt.show()
 
-# Accumulating Data
+def plot_3d_surface(comp, x_major_locator=5, y_major_locator=6, z_major_locator=5, zlim=(0, 108), view_angle=(25, 45), cmap=cm.jet):
+    """
+    Plots a 3D surface using trisurf.
+
+    Parameters:
+    - comp: List of tuples containing (x, y, z) coordinates.
+    - x_major_locator: Number of major ticks for the x-axis.
+    - y_major_locator: Number of major ticks for the y-axis.
+    - z_major_locator: Number of major ticks for the z-axis.
+    - zlim: Tuple specifying the limit for the z-axis.
+    - view_angle: Tuple specifying the (elevation, azimuth) for the view angle.
+    - cmap: Colormap for the surface.
+
+    Returns:
+    - None: Displays the 3D plot.
+    """
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    xs = [coord[0] for coord in comp]
+    ys = [coord[1] for coord in comp]
+    zs = [coord[2] for coord in comp]
+
+    surf = ax.plot_trisurf(xs, ys, zs, cmap=cmap, linewidth=0)
+    fig.colorbar(surf)
+
+    ax.xaxis.set_major_locator(MaxNLocator(x_major_locator))
+    ax.yaxis.set_major_locator(MaxNLocator(y_major_locator))
+    ax.zaxis.set_major_locator(MaxNLocator(z_major_locator))
+    ax.set_zlim(*zlim)
+    ax.view_init(*view_angle)
+
+    fig.tight_layout()
+    plt.show()
+
+
 
 def extract_information(filename):
 
