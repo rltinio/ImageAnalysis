@@ -634,6 +634,13 @@ def plot_3d_surface(comp, x_major_locator=5, y_major_locator=6, z_major_locator=
     fig.tight_layout()
     plt.show()
 
+def to_rgb(mask, rgb_value:list = [255,255,255], background_value:list = [0,0,0]):
+    height, width = mask.shape
+    array_3d = np.zeros((height, width, 3), dtype=np.uint8)
+    array_3d[mask != 0] = rgb_value
+    array_3d[mask == 0] = background_value
+
+    return array_3d
 
 
 def extract_information(filename):
