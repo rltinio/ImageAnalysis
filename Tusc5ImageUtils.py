@@ -591,24 +591,26 @@ def plot_3d_points(centers_of_mass, view_angle = (45, 45)):
 
     ax.scatter(xs, ys, zs, c='r', marker='o')
 
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
-    ax.set_zlabel('Z Coordinate')
-    ax.set_zlim(0,108)
+    ax.set_xlabel('X Axis')
+    ax.set_ylabel('Y Axis')
+    ax.set_zlabel('Z Axis')
+
+    # Set ticks for x, y, and z axes
+    ax.set_zticks(np.arange(0, 81, 10))
+
+    ax.set_zlim(0, 80)
     ax.view_init(view_angle[0], view_angle[1])
 
-    plt.show()
+    # Move the z-axis to the opposite side
+    ax.zaxis._axinfo['juggled'] = (1, 2, 0)
 
-def plot_3d_surface(comp, x_major_locator=5, y_major_locator=6, z_major_locator=5, zlim=(0, 108), view_angle=(25, 45), cmap=cm.jet):
+    plt.show()
+def plot_3d_surface(comp, view_angle=(25, 45), cmap=cm.jet):
     """
     Plots a 3D surface using trisurf.
 
     Parameters:
     - comp: List of tuples containing (x, y, z) coordinates.
-    - x_major_locator: Number of major ticks for the x-axis.
-    - y_major_locator: Number of major ticks for the y-axis.
-    - z_major_locator: Number of major ticks for the z-axis.
-    - zlim: Tuple specifying the limit for the z-axis.
     - view_angle: Tuple specifying the (elevation, azimuth) for the view angle.
     - cmap: Colormap for the surface.
 
@@ -622,15 +624,32 @@ def plot_3d_surface(comp, x_major_locator=5, y_major_locator=6, z_major_locator=
     ys = [coord[1] for coord in comp]
     zs = [coord[2] for coord in comp]
 
-    surf = ax.plot_trisurf(xs, ys, zs, cmap=cmap, linewidth=0)
+    # Get the min and max of the z-values for consistent colormap limits
+    z_min, z_max = min(zs), max(zs)
+
+    surf = ax.plot_trisurf(xs, ys, zs, cmap=cmap, linewidth=0, vmin=z_min, vmax=z_max)
     fig.colorbar(surf)
 
-    ax.xaxis.set_major_locator(MaxNLocator(x_major_locator))
-    ax.yaxis.set_major_locator(MaxNLocator(y_major_locator))
-    ax.zaxis.set_major_locator(MaxNLocator(z_major_locator))
-    ax.set_zlim(*zlim)
+    # Set axis labels
+    ax.set_xlabel('X Axis')
+    ax.set_ylabel('Y Axis')
+    ax.set_zlabel('Z Axis')
+
+    ax.set_zlim(0, 80)
+
+    # Set ticks for x, y, and z axes
+    ax.set_zticks(np.arange(0, 81, 10))
+
+    # Move the z-axis to the opposite side
+    ax.zaxis._axinfo['juggled'] = (1, 2, 0)
+
+    # Set view angle
     ax.view_init(*view_angle)
 
+    # Add grid lines to make axes more visible
+    ax.grid(True)
+
+    # Apply tight layout and show plot
     fig.tight_layout()
     plt.show()
 
