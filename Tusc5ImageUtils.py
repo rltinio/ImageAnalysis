@@ -383,6 +383,59 @@ def get_sq_stacks(image, single_mask):
 
     return sq_stacks
 
+def list_squares(image, masks):
+
+    array_list = []
+
+    for mask_id in (np.delete(np.unique(masks), 0) - 1):
+        extracted_mask = extract_masks(masks, mask_id)
+        sq_WGA_slice = extract_square_proj_expand(image, extracted_mask, extra_pixels=0)
+
+        array_list.append(sq_WGA_slice)
+
+    return array_list
+
+def fit_images_in_square(images, pad_value=5):
+    """
+    Arrange a list of 2D arrays (images) into a grid to fit approximately in a square shape.
+
+    Parameters:
+    images (list of np.ndarray): List of 2D arrays to arrange.
+    pad_value (int, optional): Value to use for padding. Default is 0.
+
+    Returns:
+    np.ndarray: A single 2D array with all input arrays arranged in a grid.
+    """
+    # Calculate number of images and the size of the grid
+    num_images = len(images)
+    grid_size = int(np.ceil(np.sqrt(num_images)))
+
+    # Determine the maximum height and width of the images
+    max_height = max(image.shape[0] for image in images)
+    max_width = max(image.shape[1] for image in images)
+
+    # Create a padded image grid
+    grid = []
+    for i in range(grid_size):
+        row_images = []
+        for j in range(grid_size):
+            index = i * grid_size + j
+            if index < num_images:
+                image = images[index]
+                # Pad image to the maximum dimensions
+                padded_image = np.pad(image, ((0, max_height - image.shape[0]), (0, max_width - image.shape[1])), mode='constant', constant_values=pad_value)
+                row_images.append(padded_image)
+            else:
+                # If there are no more images, fill with padding
+                row_images.append(np.full((max_height, max_width), pad_value))
+        # Concatenate images in the row
+        grid.append(np.hstack(row_images))
+    
+    # Concatenate all rows to form the final grid
+    stitched_image = np.vstack(grid)
+
+    return stitched_image
+
 # sq_stack and mask
 def get_traces(sq_stacks, single_mask):
     sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack = sq_stacks
