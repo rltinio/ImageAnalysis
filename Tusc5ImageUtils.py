@@ -344,7 +344,7 @@ def extract_square_proj_expand(image, single_mask, extra_pixels = 50):
     sq_WGA_slice = WGA_stack[comzi, min_row:max_row, min_col:max_col]
     new_WGA_slice[new_min_row:new_min_row + roi_height, new_min_col:new_min_col + roi_width] = sq_WGA_slice
 
-    return new_WGA_slice
+    return new_WGA_slice, comzi
 
 def remove_pixels_from_edges(array, pixels_to_remove):
     """
@@ -379,9 +379,20 @@ def get_sq_stacks(image, single_mask):
     sq_WGA_stack = image[:,2, min_row:max_row, min_col:max_col]
     sq_GLUT1_stack = image[:,3, min_row:max_row, min_col:max_col]
 
-    sq_stacks = np.stack((sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack))
+    sq_stacks = np.stack((sq_DAPI_stack, sq_eGFP_stack, sq_WGA_stack, sq_GLUT1_stack))
 
     return sq_stacks
+
+def get_traces(sq_stacks, single_mask):
+    
+    masked_stacks = sq_stacks * single_mask
+    summed_values = np.sum(masked_stacks, axis=(-1, -2))  # Sum along the spatial dimensions
+
+    # Store the results with corresponding channel names
+    channel_names = ['DAPI', 'eGFP', 'WGA', 'GluT1']
+    result = {name: value for name, value in zip(channel_names, summed_values)}
+
+    return result
 
 def list_squares(image, masks):
 
@@ -436,20 +447,6 @@ def fit_images_in_square(images, pad_value=5):
 
     return stitched_image
 
-# sq_stack and mask
-def get_traces(sq_stacks, single_mask):
-    sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack = sq_stacks
-
-    # Retrieving values in a vectorized manner
-    stacks = np.array([sq_WGA_stack, sq_DAPI_stack, sq_eGFP_stack, sq_GLUT1_stack])
-    masked_stacks = stacks * single_mask
-    summed_values = np.sum(masked_stacks, axis=(-1, -2))  # Sum along the spatial dimensions
-
-    # Store the results with corresponding channel names
-    channel_names = ['WGA', 'DAPI', 'eGFP', 'GluT1']
-    result = {name: value for name, value in zip(channel_names, summed_values)}
-
-    return result
 
 import numpy as np
 
@@ -878,7 +875,7 @@ class NumberInputApp:
         input_value = self.input_var.get()
         if input_value:
             self.input_list.append(int(input_value))
-            print("User input:", input_value)
+            #print("User input:", input_value)
             self.clear_input()
 
     def display_image(self):
