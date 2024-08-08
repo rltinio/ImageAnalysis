@@ -447,8 +447,45 @@ def fit_images_in_square(images, pad_value=5):
 
     return stitched_image
 
+def add_scale_bar(image, microns_per_pixel, scale_bar_length_microns, x_position, y_position, bar_height=5, bar_color=(255, 255, 255)):
 
-import numpy as np
+    # Calculate the length of the scale bar in pixels
+    scale_bar_pixel_length = int(scale_bar_length_microns / microns_per_pixel)
+
+    # Copy the image to avoid modifying the original
+    image_with_bar = image.copy()
+
+    # Draw the scale bar
+    cv2.rectangle(image_with_bar, (x_position, y_position), 
+                  (x_position + scale_bar_pixel_length, y_position + bar_height), 
+                  bar_color, -1)
+
+    return image_with_bar
+
+def grey_to_color(image_slice, color:str = 'white'):
+
+    # Create an empty image with the same dimensions but with 3 channels
+    slice_rgb = np.zeros((image_slice.shape[0], image_slice.shape[1], 3), dtype=np.uint8)
+
+    if color == 'magenta':
+        slice_rgb[:, :, 0] = image_slice
+        slice_rgb[:, :, 2] = image_slice
+    
+    if color == 'white':
+        slice_rgb[:, :, 1] = image_slice
+        slice_rgb[:, :, 0] = image_slice
+        slice_rgb[:, :, 2] = image_slice
+
+    if color == 'blue':
+        slice_rgb[:, :, 2] = image_slice
+
+    if color == 'green':
+        slice_rgb[:, :, 1] = image_slice
+
+    if color == 'red':
+        slice_rgb[:, :, 0] = image_slice
+
+    return slice_rgb
 
 def remove_boundary(array, pixels_to_remove):
     """
