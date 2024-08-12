@@ -772,17 +772,7 @@ def extract_information(filename):
     return DJID, eye, file_base
 
 
-def plot_single_cell(single_cell):
-
-    '''
-    Takes dataframe containing traces of a single cell
-
-    Example:
-    dataframe.query('cell_unid == 90')
-
-    '''
-    single_cell['Stain'] = single_cell['Stain'].apply(lambda x: 'GluT1' if x == 'GluT1' else x)
-    
+def plot_single_cell(single_cell, prominence=15, distance=20, threshold = None):
     stain_colors = {'WGA': 'grey', 'eGFP': 'green', 'GluT1': 'magenta', 'DAPI': 'blue'}
 
     plt.rcParams["axes.spines.right"] = False
@@ -795,21 +785,19 @@ def plot_single_cell(single_cell):
         stain_color = stain_colors.get(row['Stain'], 'gray')
         plt.plot(row['X_vals'], row['Y_vals'], linestyle='-', label=row['Stain'], color=stain_color, linewidth=10)
         
-        # Peak picking for each line
-        peaks, _ = find_peaks(row['Y_vals'], prominence=15, distance=20)
-        x_peak = np.array(row['X_vals'])[peaks]
-        y_peak = np.array(row['Y_vals'])[peaks]
-        plt.plot(x_peak, y_peak, 'x', color=stain_color, linewidth=2)
+        # Peak picking for each line using the provided prominence and distance
+        peaks, _ = find_peaks(row['Y_vals'], prominence=prominence, distance=distance, threshold = None)
+        print(f"Stain: {row['Stain']}, Detected peaks at indices: {peaks}")
+        
+        if len(peaks) > 0:
+            x_peak = np.array(row['X_vals'])[peaks]
+            y_peak = np.array(row['Y_vals'])[peaks]
+            plt.plot(x_peak, y_peak, 'o', color='red', markersize=10)
 
-    plt.xlabel('Depth (micron)', fontsize=60)
-    plt.ylabel('Y Axis', fontsize=60)
-
-    plt.yticks(fontsize=60)
-    plt.xticks(fontsize=60)
     plt.xlabel('Depth (µm)', fontsize=60)
     plt.ylabel('Fluorescence (a.u)', fontsize=60)
-    plt.title('All Stains of a Single Cell', fontsize = 65)
-    plt.legend(fontsize = 45)
+    plt.title('All Stains of a Single Cell', fontsize=65)
+    plt.legend(fontsize=45)
 
     ax = plt.gca()
     ax.spines['left'].set_linewidth(3)
