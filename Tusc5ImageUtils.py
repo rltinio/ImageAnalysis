@@ -614,6 +614,14 @@ def remove_outliers_3D(data):
     
     return filtered_data
 
+def normalize(numbers):
+    min_val = min(numbers)
+    max_val = max(numbers)
+    if max_val == min_val:
+        # If all numbers are the same, return a list of 0.5s
+        return [0.5] * len(numbers)
+    return np.array([(x - min_val) / (max_val - min_val) for x in numbers])
+
 def remove_outliers_local(centers_of_mass, num_closest_points=20, z_threshold=2):
     """
     Removes points that are outliers based on the z-values of their closest neighbors.
