@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
+import re
 
 
 ### FREQUENTLY USED FUNCTIONS ###
@@ -758,16 +759,20 @@ def to_rgb(mask, rgb_value:list = [255,255,255], background_value:list = [0,0,0]
 
 
 def extract_information(filename):
-
     '''
-    Extracts info from the .nd2 filename 
+    Extracts info from the .nd2 filename
     '''
+    file_base = filename.rsplit('.', 1)[0]  # Remove the file extension
+    base_name = file_base.split('_')[0]     # Get the first part of the filename before the first underscore
 
-    file_base = filename.rsplit('.', 1)[0]
-    base_name = file_base.split('_')[0]
+    DJID = base_name[:4]                    # Extract the DJID (first 4 characters)
     
-    DJID = base_name[:4]
-    eye = base_name[4]
+    # Extract 'R', 'R0', 'R1', 'L', 'L0', 'L1', 'RA', 'RB', etc. before the first underscore
+    match = re.search(r'([RL][0-1A-D]?)', base_name[4:])
+    if match:
+        eye = match.group(1)
+    else:
+        eye = base_name[4]  # Fallback if the pattern is not present
 
     return DJID, eye, file_base
 
@@ -970,4 +975,149 @@ def rip_identifier(nd2_file, image, dapi_masks, coords_2d):
 
     return cells_in_rip
 
+class NumberInputApp:
+    def __init__(self, root, overlay_image):
+        self.root = root
+        self.root.title("Fast Number Input")
+        
+        self.input_var = tk.StringVar()
+        self.input_list = []
+
+        self.overlay_image = overlay_image
+        self.zoom_factor = 1.0  # Initialize zoom factor
+        self.offset_x = 0
+        self.offset_y = 0
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+
+        self.create_widgets()
+        self.bind_keys()
+        self.bind_zoom()
+        self.bind_drag()
+
+    def create_widgets(self):
+        # Create an Entry widget to display the input
+        self.entry = tk.Entry(self.root, textvariable=self.input_var, font=('Helvetica', 24), justify='center')
+        self.entry.grid(row=0, column=0, columnspan=3)
+
+        # Create number buttons
+        self.buttons = []
+        for i in range(1, 10):
+            button = tk.Button(self.root, text=str(i), font=('Helvetica', 24), command=lambda i=i: self.on_button_click(i))
+            self.buttons.append(button)
+        
+        # Add button for 0
+        zero_button = tk.Button(self.root, text="0", font=('Helvetica', 24), command=lambda: self.on_button_click(0))
+        self.buttons.append(zero_button)
+
+        # Arrange buttons in a grid (3x4 grid for 0-9)
+        for i in range(1, 10):
+            self.buttons[i-1].grid(row=(i-1)//3 + 1, column=(i-1)%3)
+        self.buttons[9].grid(row=4, column=1)  # Place 0 in the center of the last row
+
+        # Create Clear and Submit buttons
+        self.clear_button = tk.Button(self.root, text="Clear", font=('Helvetica', 24), command=self.clear_input)
+        self.clear_button.grid(row=5, column=0)
+
+        self.submit_button = tk.Button(self.root, text="Submit", font=('Helvetica', 24), command=self.submit_input)
+        self.submit_button.grid(row=5, column=2)
+
+        # Create a Label to display the image
+        self.image_label = tk.Label(self.root)
+        self.image_label.grid(row=6, column=0, columnspan=3)
+        self.display_image()
+
+    def bind_keys(self):
+        for i in range(0, 10):
+            self.root.bind(str(i), self.on_key_press)
+        self.root.bind('<Return>', self.submit_input)
+        self.root.bind('<BackSpace>', self.on_backspace_press)
+
+    def bind_zoom(self):
+        self.root.bind("<MouseWheel>", self.on_mouse_wheel)
+
+    def bind_drag(self):
+        self.image_label.bind("<ButtonPress-1>", self.on_button_press)
+        self.image_label.bind("<B1-Motion>", self.on_mouse_drag)
+        self.image_label.bind("<ButtonRelease-1>", self.on_button_release)
+
+    def on_button_click(self, number):
+        current_value = self.input_var.get()
+        self.input_var.set(current_value + str(number))
+
+    def on_key_press(self, event):
+        current_value = self.input_var.get()
+        self.input_var.set(current_value + event.char)
+
+    def on_backspace_press(self, event):
+        current_value = self.input_var.get()
+        self.input_var.set(current_value[:-1])
+
+    def clear_input(self):
+        self.input_var.set("")
+
+    def submit_input(self, event=None):
+        input_value = self.input_var.get()
+        if input_value:
+            self.input_list.append(int(input_value))
+            #print("User input:", input_value)
+            self.clear_input()
+
+    def display_image(self):
+        image = Image.fromarray(self.overlay_image)
+        new_size = (int(500 * self.zoom_factor), int(500 * self.zoom_factor))
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(image)
+
+        # Adjust the image position based on the offset
+        self.image_label.config(image=photo)
+        self.image_label.image = photo
+        self.image_label.place(x=self.offset_x, y=self.offset_y)
+
+    def on_mouse_wheel(self, event):
+        if event.delta > 0:
+            self.zoom_factor *= 1.1  # Zoom in
+        elif event.delta < 0:
+            self.zoom_factor *= 0.9  # Zoom out
+        self.display_image()
+
+    def on_button_press(self, event):
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+
+    def on_mouse_drag(self, event):
+        delta_x = event.x - self.drag_start_x
+        delta_y = event.y - self.drag_start_y
+        self.offset_x += delta_x
+        self.offset_y += delta_y
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+        self.display_image()
+
+    def on_button_release(self, event):
+        pass
+
+def rip_identifier(nd2_file, image, dapi_masks, coords_2d):
+
+    file_base = nd2_file.rsplit('.', 1)[0]
+    def run_app(overlay_image):
+        root = tk.Tk()
+        app = NumberInputApp(root, overlay_image)
+        root.mainloop()
+        return app.input_list
     
+    WGA_stack = to_8bit(image[:,2,:,:].copy())
+
+    # Plots ripped cells
+    z_intensities = np.sum(WGA_stack, axis=(1, 2))
+    ILM_layer = int(np.argmax(z_intensities))
+
+    
+
+    overlay = plot.mask_overlay(WGA_stack[ILM_layer, :, :], dapi_masks)
+    overlay_image = annotate_image(overlay, coords_2d, text_color=(255, 255, 255), font_scale=.5, thickness=1)
+
+    # Run the Tkinter input window 
+    cells_in_rip = {file_base: run_app(overlay_image)}
+
+    return cells_in_rip
