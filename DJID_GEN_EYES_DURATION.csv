@@ -1,4 +1,4 @@
-DJID,Genotype,Experimental Eye,Control Eye,Stim_duration
+DJID,Genotype,Experimental Eye,Control Eye,Time_Condition
 2143,het,R,L,30
 2146,homo,R,L,30
 3101,homo,L,R,30
@@ -12,7 +12,7 @@ DJID,Genotype,Experimental Eye,Control Eye,Stim_duration
 3529,wildtype,L,R,60
 3527,het,R,L,15
 3420,homo,L,R,15
-3575,homo,L,R,90
+3575,het,L,R,90
 3557,homo,R,L,60
 3526,het,L0,L1,30
 3558,homo,R0,R1,30
