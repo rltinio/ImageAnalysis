@@ -1121,3 +1121,184 @@ def rip_identifier(nd2_file, image, dapi_masks, coords_2d):
     cells_in_rip = {file_base: run_app(overlay_image)}
 
     return cells_in_rip
+
+import tkinter as tk
+from tkinter.ttk import *
+from PIL import Image, ImageTk, ImageEnhance
+import numpy as np
+
+def run_max_projector_app(image_stack):
+    class RangeSliderH(Frame):
+        def __init__(self, parent, vars, max_slice, padX=12, **kwargs):
+            super().__init__(parent, **kwargs)
+            self.vars = vars
+            self.max_slice = max_slice
+            self.padX = padX
+            self.canvas = tk.Canvas(self, width=300, height=50)
+            self.canvas.pack()
+
+            self.update_slider()
+
+            self.canvas.bind('<B1-Motion>', self.move_slider)
+            self.canvas.bind('<ButtonRelease-1>', self.update_image)
+
+        def update_slider(self):
+            self.canvas.delete("all")
+            width = self.canvas.winfo_width()
+            handle_radius = 15  # Increase handle size for easier dragging
+
+            x1 = self.padX + (width - 2 * self.padX) * self.vars[0].get()
+            x2 = self.padX + (width - 2 * self.padX) * self.vars[1].get()
+
+            self.canvas.create_line(x1, 25, x2, 25, fill="gray", width=6)  # Thicker line for better visibility
+            self.canvas.create_oval(x1 - handle_radius, 25 - handle_radius, x1 + handle_radius, 25 + handle_radius, fill="blue", outline="black")
+            self.canvas.create_oval(x2 - handle_radius, 25 - handle_radius, x2 + handle_radius, 25 + handle_radius, fill="blue", outline="black")
+
+        def move_slider(self, event):
+            width = self.canvas.winfo_width()
+            x = event.x
+
+            closest_handle = None
+            min_distance = float('inf')
+
+            # Determine which handle is closer to the mouse click
+            for i, var in enumerate(self.vars):
+                handle_x = self.padX + (width - 2 * self.padX) * var.get()
+                distance = abs(x - handle_x)
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_handle = i
+
+            # Move the closest handle
+            if closest_handle is not None:
+                new_val = (x - self.padX) / (width - 2 * self.padX)
+                if closest_handle == 0:
+                    self.vars[0].set(max(0, min(new_val, self.vars[1].get())))
+                else:
+                    self.vars[1].set(max(self.vars[0].get(), min(new_val, 1)))
+
+            self.update_slider()
+            self.update_image()
+
+        def get_values(self):
+            return int(self.vars[0].get() * self.max_slice), int(self.vars[1].get() * self.max_slice)
+
+        def update_image(self, event=None):
+            z1, z2 = self.get_values()
+            app.update_image(z1, z2)
+            app.update_entry_values(z1, z2)
+
+    class MaxProjectorApp:
+        def __init__(self, root, stack):
+            self.root = root
+            self.root.title("Z-Slice Image Viewer")
+
+            self.stack = stack
+            self.min_slice = 0
+            self.max_slice = stack.shape[0] - 1
+
+            self.image_width = 700
+            self.image_height = 700
+
+            self.z0 = None
+            self.z1 = None
+
+            self.create_widgets()
+            self.update_image(self.min_slice, self.max_slice)
+
+        def create_widgets(self):
+            slider_frame = Frame(self.root)
+            slider_frame.pack(pady=10)
+
+            self.hLeft = tk.DoubleVar(value=self.min_slice / self.max_slice)
+            self.hRight = tk.DoubleVar(value=self.max_slice / self.max_slice)
+            self.range_slider = RangeSliderH(slider_frame, [self.hLeft, self.hRight], max_slice=self.max_slice)
+            self.range_slider.pack(fill='x', expand=True)
+
+            self.slice_text = Label(slider_frame, text=f"Slice range: {self.min_slice} to {self.max_slice}")
+            self.slice_text.pack(pady=5)
+
+            self.brighten_var = tk.IntVar()
+            self.brighten_check = Checkbutton(slider_frame, text="Brighten", variable=self.brighten_var, command=self.on_brighten_toggle)
+            self.brighten_check.pack(side='left', pady=5)
+
+            self.z1_entry = Entry(slider_frame, width=5)
+            self.z1_entry.pack(side='left', padx=5)
+            self.z1_entry.bind("<Return>", self.on_entry_update)
+
+            self.z2_entry = Entry(slider_frame, width=5)
+            self.z2_entry.pack(side='left', padx=5)
+            self.z2_entry.bind("<Return>", self.on_entry_update)
+
+            self.image_label = Label(self.root)
+            self.image_label.pack(pady=10)
+
+            exit_button = Button(self.root, text="Exit", command=self.on_exit)
+            exit_button.pack(pady=10)
+
+        def on_brighten_toggle(self):
+            z1, z2 = self.range_slider.get_values()
+            self.update_image(z1, z2)
+
+        def on_entry_update(self, event=None):
+            try:
+                z1 = int(self.z1_entry.get())
+                z2 = int(self.z2_entry.get())
+                if z1 >= self.min_slice and z2 <= self.max_slice and z1 < z2:
+                    self.hLeft.set(z1 / self.max_slice)
+                    self.hRight.set(z2 / self.max_slice)
+                    self.update_image(z1, z2)
+                else:
+                    raise ValueError
+            except ValueError:
+                print("Invalid input for slices")
+
+        def update_entry_values(self, z1, z2):
+            self.z1_entry.delete(0, tk.END)
+            self.z1_entry.insert(0, str(z1))
+            self.z2_entry.delete(0, tk.END)
+            self.z2_entry.insert(0, str(z2))
+
+        def update_image(self, z1, z2):
+            self.slice_text.config(text=f"Slice range: {z1} to {z2}")
+
+            slice_mp = max_proj(self.stack[z1:z2])
+
+            if self.brighten_var.get() == 1:
+                slice_mp = self.apply_brightness_contrast(slice_mp)
+
+            image = Image.fromarray(slice_mp)
+
+            image_resized = image.resize((self.image_width, self.image_height))
+            photo = ImageTk.PhotoImage(image_resized)
+
+            self.image_label.config(image=photo)
+            self.image_label.image = photo
+
+            self.z0 = z1
+            self.z1 = z2
+
+        def apply_brightness_contrast(self, image_array):
+            image = Image.fromarray(image_array)
+            enhancer = ImageEnhance.Brightness(image)
+            image = enhancer.enhance(1.2)
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.2)
+            return np.array(image)
+
+        def export_slices(self):
+            z0 = self.z0
+            z1 = self.z1
+
+            return z0, z1
+
+        def on_exit(self):
+            self.export_slices()
+            self.root.destroy()
+
+    root = tk.Tk()
+    app = MaxProjectorApp(root, image_stack)
+    root.mainloop()
+
+    z0, z1 = app.export_slices()
+    return z0, z1
