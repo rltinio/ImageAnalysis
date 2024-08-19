@@ -1171,7 +1171,7 @@ from tkinter.ttk import *
 from PIL import Image, ImageTk, ImageEnhance
 import numpy as np
 
-def run_max_projector_app(image_stack):
+def run_max_projector_app(dapi_stack):
     class RangeSliderH(Frame):
         def __init__(self, parent, vars, max_slice, padX=12, **kwargs):
             super().__init__(parent, **kwargs)
@@ -1341,7 +1341,7 @@ def run_max_projector_app(image_stack):
             self.root.destroy()
 
     root = tk.Tk()
-    app = MaxProjectorApp(root, image_stack)
+    app = MaxProjectorApp(root, dapi_stack)
     root.mainloop()
 
     z0, z1 = app.export_slices()
