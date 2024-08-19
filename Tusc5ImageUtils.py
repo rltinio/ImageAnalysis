@@ -384,6 +384,50 @@ def get_sq_stacks(image, single_mask):
 
     return sq_stacks
 
+def find_center_2d(mask_array):
+    """
+    This function finds the center of the mask in a given 2D array.
+    The center is calculated as the mean of the x and y coordinates where the mask value is greater than 0.
+    """
+    indices = np.argwhere(mask_array > 0)
+    if len(indices) == 0:
+        return None
+    center_x = np.mean(indices[:, 0])
+    center_y = np.mean(indices[:, 1])
+    return (center_x, center_y)
+
+def closest_mask_2d(array_one, array_two):
+    """
+    This function finds the binary mask in array_two whose center is closest to the center of the mask in array_one.
+    """
+    # Calculate the center of the mask in array_one
+    center_one = find_center_2d(array_one)
+    if center_one is None:
+        return None
+    
+    min_distance = float('inf')
+    closest_mask_value = None
+
+    # Get unique masks in array_two
+    unique_masks = np.unique(array_two[array_two > 0])
+
+    # Calculate the center of each mask in array_two
+    for mask_value in unique_masks:
+        mask_array = np.where(array_two == mask_value, 1, 0)
+        center_two = find_center_2d(mask_array)
+        if center_two is None:
+            continue
+        # Calculate the Euclidean distance between centers
+        distance = np.sqrt((center_one[0] - center_two[0])**2 + (center_one[1] - center_two[1])**2)
+        if distance < min_distance:
+            min_distance = distance
+            closest_mask_value = mask_value
+
+    # Create a binary mask for the closest mask value
+    binary_mask = np.where(array_two == closest_mask_value, 1, 0)
+
+    return binary_mask
+
 def get_traces(sq_stacks, single_mask):
     
     masked_stacks = sq_stacks * single_mask
