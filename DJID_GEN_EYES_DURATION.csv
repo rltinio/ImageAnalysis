@@ -16,3 +16,8 @@ DJID,Genotype,Experimental Eye,Control Eye,Time_Condition
 3557,homo,R,L,60
 3526,het,L0,L1,30
 3558,homo,R0,R1,30
+3604,homo,L,R,0
+3606,homo,R,L,90
+3656,homo,R,L,60
+3653,homo,L,R,30
+3654,homo,L,R,15
