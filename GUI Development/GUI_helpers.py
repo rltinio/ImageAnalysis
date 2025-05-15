@@ -5,9 +5,9 @@ import tkinter as tk
 from tkinter import filedialog
 import dearpygui.dearpygui as dpg
 import nd2
-from cellpose import models
+from cellpose import models, denoise
 from skimage.morphology import binary_erosion, disk
-from skimage import img_as_ubyte
+from skimage import img_as_ubyte, exposure
 import cv2
 
 current_folder = None
@@ -18,7 +18,7 @@ gray_img = None
 mask_array = None
 colors = {}
 selected_masks = []
-boundaries_df = pd.DataFrame(columns=["filename","z_min","z_max"])
+boundaries_df = pd.DataFrame(columns=["filename", "z_min", "z_max", "rip_cells"])
 texture_cache = None
 last_show_masks = True
 last_selected = []
@@ -28,6 +28,15 @@ def to_8bit(arr):
     if norm.max() > 0:
         norm /= norm.max()
     return img_as_ubyte(norm)
+
+def normalize_image_fixed(img):
+    return img.astype(np.float32) / 255.0
+
+def auto_brightness_contrast(image):
+    normalized_image = image.astype(np.float32) / 255.0
+    equalized_image = exposure.equalize_adapthist(normalized_image)
+    equalized_image = (equalized_image * 255).astype(np.uint8)
+    return equalized_image
 
 def max_proj(channel_zstack):
     return np.max(channel_zstack, axis=0)
@@ -97,23 +106,37 @@ def open_folder_dialog(sender, app_data, user_data):
     dpg.set_value("status_text", "Folder loaded")
 
 def contents_list_callback(sender, app_data, user_data):
-    sel = app_data
-    show_z = (sel == opened_file)
-    for tag in ("z_range_group","set_boundaries_button","z_min_slider","z_max_slider"):
-        if dpg.does_item_exist(tag):
-            dpg.show_item(tag) if show_z else dpg.hide_item(tag)
-    show_rip = show_z and sel in boundaries_df['filename'].values
-    if dpg.does_item_exist("rip_group"):
-        dpg.show_item("rip_group") if show_rip else dpg.hide_item("rip_group")
+    sel = dpg.get_value("contents_list")
+    if sel != opened_file:
+        dpg.hide_item("z_range_group")
+        dpg.hide_item("z_min_slider")
+        dpg.hide_item("z_max_slider")
+        dpg.hide_item("rip_group")
+        dpg.hide_item("wga_group")
+        dpg.hide_item("wga_checkbox")
+        dpg.hide_item("wga_slider")
+        dpg.set_value("status_text", f"Selected: {sel}")
+    else:
+        dpg.show_item("z_range_group")
+        dpg.show_item("z_min_slider")
+        dpg.show_item("z_max_slider")
+        dpg.show_item("wga_group")
+        dpg.show_item("wga_checkbox")
+        dpg.show_item("wga_slider")
+        if opened_file in boundaries_df['filename'].values:
+            dpg.show_item("rip_group")
 
 def open_nd2_callback(sender, app_data, user_data):
-    global opened_file, channel_zstack, channel2_stack, gray_img, mask_array, colors, selected_masks
+    global opened_file, channel_zstack, channel2_stack, gray_img, mask_array, colors, selected_masks, texture_cache
     sel = dpg.get_value("contents_list")
     if not sel:
         dpg.set_value("status_text", "No file selected")
         return
     if sel != opened_file:
         dpg.set_value("status_text", f"Loading: {sel}")
+        dpg.hide_item("wga_group")
+        dpg.hide_item("wga_checkbox")
+        dpg.hide_item("wga_slider")
         path = os.path.join(current_folder, sel)
         with nd2.ND2File(path) as f:
             stack8 = to_8bit(f.asarray())
@@ -123,16 +146,30 @@ def open_nd2_callback(sender, app_data, user_data):
         add_z_range_widget("contents_window", channel_zstack.shape[0])
         dpg.set_value("contents_list", sel)
         gray_img = max_proj(channel_zstack)
-        mask_array = np.zeros_like(gray_img, dtype=int)
-        colors.clear(); selected_masks.clear()
+        mask_array = None
+        selected_masks.clear()
+        colors.clear()
+        texture_cache = None
+        dpg.set_value("rip_checkbox", False)
+        dpg.hide_item("run_rip_button")
+        dpg.hide_item("show_masks_checkbox")
+        dpg.set_value("show_masks_checkbox", False)
+        dpg.hide_item("confirm_masks_button")
+        dpg.hide_item("selected_mask_count")
+        dpg.set_value("selected_mask_count", "Cells in rip: []")
         update_texture(gray_img, force=True)
         dpg.configure_item("wga_slider", min_value=0, max_value=channel2_stack.shape[0]-1)
-        dpg.show_item("wga_group"); dpg.show_item("z_range_group")
+        dpg.set_value("wga_checkbox", False)
+        dpg.show_item("wga_group")
+        dpg.show_item("wga_checkbox")
+        dpg.show_item("wga_slider")
+        dpg.show_item("z_range_group")
         if sel in boundaries_df['filename'].values:
             dpg.show_item("rip_group")
         dpg.set_value("status_text", f"Loaded: {sel}")
     else:
         dpg.set_value("status_text", f"Already loaded: {sel}")
+
 
 def z_slider_callback(sender, app_data, user_data):
     global gray_img
@@ -144,6 +181,15 @@ def z_slider_callback(sender, app_data, user_data):
 
 def set_boundaries_callback(sender, app_data, user_data):
     global boundaries_df, mask_array, selected_masks, colors, texture_cache
+    dpg.set_value("status_text", "Setting Z boundaries...")
+    dpg.set_value("rip_checkbox", False)
+    dpg.hide_item("run_rip_button")
+    dpg.hide_item("show_masks_checkbox")
+    dpg.set_value("show_masks_checkbox", False)
+    dpg.hide_item("confirm_masks_button")
+    dpg.hide_item("selected_mask_count")
+    dpg.set_value("selected_mask_count", "Cells in rip: []")
+
     if opened_file is None:
         return
     z0 = dpg.get_value("z_min_slider")
@@ -151,7 +197,7 @@ def set_boundaries_callback(sender, app_data, user_data):
     if opened_file in boundaries_df['filename'].values:
         boundaries_df.loc[boundaries_df['filename'] == opened_file, ['z_min', 'z_max']] = [z0, z1]
     else:
-        boundaries_df.loc[len(boundaries_df)] = [opened_file, z0, z1]
+        boundaries_df.loc[len(boundaries_df)] = [opened_file, z0, z1, []]
     mask_array = None
     selected_masks.clear()
     colors.clear()
@@ -177,7 +223,7 @@ def rip_checkbox_callback(sender, app_data, user_data):
         update_texture(gray_img, force=True)
 
 def run_rip_detector_callback(sender, app_data, user_data):
-    global boundaries_df, mask_array, colors, selected_masks, texture_cache
+    global boundaries_df, mask_array, colors, selected_masks, texture_cache, gray_img
 
     if opened_file not in boundaries_df["filename"].values:
         dpg.set_value("status_text", "Set Z boundaries before running rip detector.")
@@ -192,22 +238,31 @@ def run_rip_detector_callback(sender, app_data, user_data):
     colors.clear()
     texture_cache = None
 
-    dpg.set_value("status_text", "Rip detection started")
+    dpg.set_value("status_text", "Rip detection started...")
     dpg.show_item("show_masks_checkbox")
     dpg.set_value("show_masks_checkbox", True)
+    dpg.hide_item("confirm_masks_button")
+    dpg.hide_item("selected_mask_count")
     update_texture(gray_img, force=True)
 
+    mp_DAPI = auto_brightness_contrast(gray_img)
     model_path = 'CP_models/T5_DAPI_V4'
-    cp_model = models.CellposeModel(gpu=True, pretrained_model=model_path)
-    masks, _, _ = cp_model.eval(gray_img, diameter=None)
+    deblur_model = denoise.CellposeDenoiseModel(gpu=True, model_type=model_path, restore_type="deblur_cyto3")
+    masks, _, _, _ = deblur_model.eval(mp_DAPI, diameter=None, channels=[0, 0])
 
-    mask_array = masks
+    if masks.max() == 0:
+        dpg.set_value("status_text", "No masks detected.")
+        return
+
+    mask_array = masks - masks.min()
     colors.update({m: np.random.rand(3) for m in np.unique(mask_array) if m > 0})
     selected_masks.clear()
     update_texture(gray_img, force=True)
 
+    dpg.set_value("selected_mask_count", "Cells in rip: []")
+    dpg.show_item("selected_mask_count")
+    dpg.show_item("confirm_masks_button")
     dpg.set_value("status_text", "Rip detection complete")
-
 
 
 def wga_view_callback(sender, app_data, user_data):
@@ -216,7 +271,7 @@ def wga_view_callback(sender, app_data, user_data):
 
 def update_texture(base_img=None, force=False):
     global gray_img, channel2_stack, texture_cache, last_show_masks, last_selected, mask_array, selected_masks, colors
-    print("[DEBUG] update_texture called")
+    print("\n[DEBUG] update_texture called")
     if base_img is None:
         base_img = gray_img if not dpg.get_value("wga_checkbox") else channel2_stack[dpg.get_value("wga_slider")]
 
@@ -232,7 +287,7 @@ def update_texture(base_img=None, force=False):
     rgba[..., 3] = 1.0
 
     if show_masks and mask_array is not None:
-        print("[DEBUG] embedding mask outlines in update_texture")
+        print("\n[DEBUG] embedding mask outlines in update_texture")
         outline_rgba = np.zeros((*base_img.shape, 4), dtype=np.float32)
         for m in np.unique(mask_array):
             if m == 0:
@@ -252,6 +307,10 @@ def update_texture(base_img=None, force=False):
     last_show_masks = show_masks
     last_selected = selected_masks.copy()
     dpg.set_value("dynamic_texture", texture_cache)
+    if selected_masks:
+        dpg.set_value("selected_mask_count", f"Cells in rip: {sorted(selected_masks)}")
+    else:
+        dpg.set_value("selected_mask_count", "Cells in rip: []")
 
 def mask_click_callback(sender, app_data, user_data):
     if not dpg.get_value("show_masks_checkbox"):
@@ -269,10 +328,9 @@ def mask_click_callback(sender, app_data, user_data):
             selected_masks.remove(m)
         else:
             selected_masks.append(m)
-        current_img = gray_img if not dpg.get_value("wga_checkbox") else channel2_stack[dpg.get_value("wga_slider")]
-        update_texture(current_img, force=True)
+        update_texture(gray_img, force=True)
         dpg.set_value("status_text", f"Selected mask: {m}")
-
+        dpg.set_value("selected_mask_count", f"Cells in rip: {sorted(selected_masks)}")
 
 def add_z_range_widget(parent, depth):
     for tag in ["z_range_group","z_min_slider","z_max_slider","set_boundaries_button"]:
@@ -284,3 +342,11 @@ def add_z_range_widget(parent, depth):
         dpg.add_button(label="Set Boundaries", tag="set_boundaries_button", callback=set_boundaries_callback)
     dpg.add_slider_int(label="Min Z", tag="z_min_slider", parent=parent, min_value=0, max_value=mid, default_value=0, callback=z_slider_callback)
     dpg.add_slider_int(label="Max Z", tag="z_max_slider", parent=parent, min_value=mid, max_value=depth-1, default_value=depth-1, callback=z_slider_callback)
+
+def confirm_mask_selection_callback(sender, app_data, user_data):
+    global boundaries_df, selected_masks
+    if opened_file in boundaries_df["filename"].values:
+        idx = boundaries_df["filename"] == opened_file
+        boundaries_df.at[boundaries_df.index[idx][0], "rip_cells"] = selected_masks.copy()
+        dpg.set_value("selected_mask_count", f"Cells in rip: {sorted(selected_masks)}")
+        dpg.set_value("status_text", f"Masks confirmed for {opened_file}")
