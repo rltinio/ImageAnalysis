@@ -6,7 +6,6 @@ from GUI_helpers import (
     contents_list_callback,
     open_nd2_callback,
     z_slider_callback,
-    set_boundaries_callback,
     run_rip_detector_callback,
     rip_checkbox_callback,
     wga_view_callback,
@@ -28,7 +27,7 @@ with dpg.window(tag="left_window", label="Controls", pos=(10, 10), width=300, he
     dpg.add_checkbox(label="Save MP details", tag="opt_save", default_value=True)
     dpg.add_text("Status: Ready", tag="status_text")
 
-with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 320), width=300, height=490, no_move=True):
+with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 320), width=300, height=465, no_move=True):
     dpg.add_listbox(items=[], tag="contents_list", num_items=10, width=280, callback=contents_list_callback)
     dpg.add_button(label="Open .nd2", width = 280, callback=open_nd2_callback)
 
@@ -36,14 +35,16 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 320), w
 
     with dpg.group(tag="identifiers_group", show=False):
         with dpg.group(horizontal=True):
-            dpg.add_text("Sex:")
-            dpg.add_radio_button(items=["M", "F", "Unknown"], tag="sex_radio", label="Sex", horizontal=True)
+            dpg.add_text("DJID:")
+            dpg.add_input_text(tag="djid_input", readonly=False, width=35)
+            dpg.add_text("  Sex:")
+            dpg.add_combo(items=["M", "F", "Unknown"], tag="sex_combo", label="", width=40)
+            dpg.add_text("  Eye:")
+            dpg.add_combo(items=["L", "R", "Unknown"], tag="eye_combo", label="", width=40)
         with dpg.group(horizontal=True):
-            dpg.add_text("Eye:")
-            dpg.add_radio_button(items=["L", "R", "Unknown"], tag="eye_radio", label="Eye", horizontal=True)
-        with dpg.group(horizontal=True):
-            dpg.add_text("Time Condition (min):")
-            dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30", width=120)
+
+            dpg.add_text("Duration (min):")
+            dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30, 60", width=165)
 
     dpg.add_spacer(height=10)
 
@@ -55,7 +56,7 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 320), w
 
         dpg.add_spacer(height=10)
 
-with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 820), width=300, height=180, no_move=True):
+with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 795), width=300, height=180, no_move=True):
     with dpg.group(tag="rip_group", show=False):
         dpg.add_checkbox(label="Rip?", tag="rip_checkbox", callback=rip_checkbox_callback)
         with dpg.group(horizontal=True):

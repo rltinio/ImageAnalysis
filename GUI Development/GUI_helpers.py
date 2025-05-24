@@ -18,7 +18,7 @@ gray_img = None
 mask_array = None
 colors = {}
 selected_masks = []
-metadata_df = pd.DataFrame(columns=["filename", "z_min", "z_max", "rip_cells", "sex", "eye", "time_min"])
+metadata_df = pd.DataFrame(columns=["filename", "z_min", "z_max", "rip_cells", "sex", "eye", "time_min", "djid"])
 texture_cache = None
 last_show_masks = True
 last_selected = []
@@ -71,7 +71,6 @@ def draw_mask_outlines():
     rgba[..., 3] = np.clip(rgba[..., 3] + outline_rgba[..., 3], 0, 1)
 
     dpg.set_value("dynamic_texture", rgba.flatten().tolist())
-
 
 def blend_with_masks(gray):
     h, w = gray.shape
@@ -145,6 +144,26 @@ def open_nd2_callback(sender, app_data, user_data):
         opened_file = sel
         dpg.set_value("contents_list", sel)
 
+        # Auto-fill DJID and Eye based on filename
+        digits = ''.join(filter(str.isdigit, sel))
+        djid_guess = digits[:4]
+        dpg.set_value("djid_input", djid_guess)
+
+        eye_guess = ""
+        try:
+            idx = sel.index(djid_guess) + len(djid_guess)
+            if idx < len(sel):
+                eye_char = sel[idx].upper()
+                if eye_char in ["R", "L"]:
+                    eye_guess = eye_char
+        except (ValueError, IndexError):
+            pass
+        dpg.set_value("eye_combo", eye_guess)
+
+        # Clear other identifier fields
+        dpg.set_value("sex_combo", "")
+        dpg.set_value("time_input", "")
+
         # Reset WGA widgets
         dpg.set_value("wga_checkbox", False)
         dpg.configure_item("wga_slider", min_value=0, max_value=channel2_stack.shape[0] - 1)
@@ -161,10 +180,8 @@ def open_nd2_callback(sender, app_data, user_data):
         # Update texture view
         update_texture(gray_img, force=True)
 
-        # Add widgets with proper dynamic setup
+        # Rebuild and show UI
         add_z_range_widget("contents_window", channel_zstack.shape[0])
-
-        # Show widgets in layout order
         dpg.show_item("identifiers_group")
         dpg.show_item("wga_group")
         dpg.show_item("wga_checkbox")
@@ -179,53 +196,27 @@ def open_nd2_callback(sender, app_data, user_data):
     else:
         dpg.set_value("status_text", f"Already loaded: {sel}")
 
-    # Populate metadata if it exists
+    # Populate saved metadata if it exists
     if sel in metadata_df["filename"].values:
         row = metadata_df.loc[metadata_df["filename"] == sel].iloc[0]
         dpg.set_value("z_min_slider", int(row["z_min"]))
         dpg.set_value("z_max_slider", int(row["z_max"]))
         if pd.notnull(row["sex"]):
-            dpg.set_value("sex_radio", row["sex"])
+            dpg.set_value("sex_combo", row["sex"])
         if pd.notnull(row["eye"]):
-            dpg.set_value("eye_radio", row["eye"])
+            dpg.set_value("eye_combo", row["eye"])
         if pd.notnull(row["time_min"]):
             dpg.set_value("time_input", str(int(row["time_min"])))
-
+        if pd.notnull(row["djid"]):
+            dpg.set_value("djid_input", str(row["djid"]))
 
 def z_slider_callback(sender, app_data, user_data):
     global gray_img
-    if channel_zstack is None:
+    if channel_zstack is None:  
         return
     z0, z1 = dpg.get_value("z_min_slider"), dpg.get_value("z_max_slider")
     gray_img = max_proj(channel_zstack[z0:z1+1])
     update_texture(gray_img, force=True)
-
-def set_boundaries_callback(sender, app_data, user_data):
-    global metadata_df, mask_array, selected_masks, colors, texture_cache
-    dpg.set_value("status_text", "Setting Z boundaries...")
-    dpg.show_item("save_metadata_button")
-    dpg.set_value("rip_checkbox", False)
-    dpg.hide_item("run_rip_button")
-    dpg.hide_item("show_masks_checkbox")
-    dpg.set_value("show_masks_checkbox", False)
-    dpg.hide_item("confirm_masks_button")
-    dpg.hide_item("selected_mask_count")
-    dpg.set_value("selected_mask_count", "Cells in rip: []")
-
-    if opened_file is None:
-        return
-    z0 = dpg.get_value("z_min_slider")
-    z1 = dpg.get_value("z_max_slider")
-    mask_array = None
-    selected_masks.clear()
-    colors.clear()
-    texture_cache = None
-    dpg.set_value("status_text", f"{opened_file}: {z0}-{z1}")
-    if opened_file in metadata_df["filename"].values:
-        dpg.show_item("rip_group")
-    else:
-        dpg.hide_item("rip_group")
-
 
 def rip_checkbox_callback(sender, app_data, user_data):
     dpg.set_value("show_masks_checkbox", False)
@@ -245,10 +236,20 @@ def save_metadata_callback(sender, app_data, user_data):
         dpg.set_value("status_text", "No file loaded.")
         return
 
-    sex = dpg.get_value("sex_radio")
-    eye = dpg.get_value("eye_radio")
+    sex = dpg.get_value("sex_combo")
+    eye = dpg.get_value("eye_combo")
     time_str = dpg.get_value("time_input")
+    djid = dpg.get_value("djid_input")
 
+    if not sex:
+        dpg.set_value("status_text", "Please select a sex.")
+        return
+    if not eye:
+        dpg.set_value("status_text", "Please select an eye.")
+        return
+    if not time_str.strip():
+        dpg.set_value("status_text", "Time condition is required.")
+        return
     try:
         time_min = int(time_str)
     except ValueError:
@@ -258,7 +259,6 @@ def save_metadata_callback(sender, app_data, user_data):
     z0 = dpg.get_value("z_min_slider")
     z1 = dpg.get_value("z_max_slider")
 
-    # Always overwrite or insert fresh data
     data = {
         "filename": opened_file,
         "z_min": z0,
@@ -266,7 +266,8 @@ def save_metadata_callback(sender, app_data, user_data):
         "rip_cells": [],
         "sex": sex,
         "eye": eye,
-        "time_min": time_min
+        "time_min": time_min,
+        "djid": djid
     }
 
     if opened_file in metadata_df["filename"].values:
@@ -320,7 +321,6 @@ def run_rip_detector_callback(sender, app_data, user_data):
     dpg.show_item("selected_mask_count")
     dpg.show_item("confirm_masks_button")
     dpg.set_value("status_text", "Rip detection complete")
-
 
 def wga_view_callback(sender, app_data, user_data):
     img = gray_img if not dpg.get_value("wga_checkbox") else channel2_stack[dpg.get_value("wga_slider")]
