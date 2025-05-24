@@ -36,7 +36,7 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 320), w
     with dpg.group(tag="identifiers_group", show=False):
         with dpg.group(horizontal=True):
             dpg.add_text("DJID:")
-            dpg.add_input_text(tag="djid_input", readonly=False, width=35)
+            dpg.add_input_text(tag="djid_input", readonly=False, width=39)
             dpg.add_text("  Sex:")
             dpg.add_combo(items=["M", "F", "Unknown"], tag="sex_combo", label="", width=40)
             dpg.add_text("  Eye:")
@@ -44,7 +44,7 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 320), w
         with dpg.group(horizontal=True):
 
             dpg.add_text("Duration (min):")
-            dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30, 60", width=165)
+            dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30, 60, 90", width=165)
 
     dpg.add_spacer(height=10)
 
@@ -65,7 +65,7 @@ with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 795), width=300, he
         dpg.add_text("Selected: 0", tag="selected_mask_count")
         dpg.add_button(label="Confirm Masks", tag="confirm_masks_button", show=False, callback=confirm_mask_selection_callback)
 
-with dpg.window(tag="right_window", label="Image Panel", pos=(355, 10), width=1024, height=1024, no_move=True):
+with dpg.window(tag="right_window", label="Image Panel", pos=(320, 10), width=1024, height=1024, no_move=True):
     with dpg.drawlist(tag="drawlist", width=1024, height=1024):
         dpg.draw_image("dynamic_texture", (0, 0), (1024, 1024))
     handler = dpg.add_item_handler_registry()
