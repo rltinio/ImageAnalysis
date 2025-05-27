@@ -18,7 +18,7 @@ from GUI_helpers import (
 dpg.create_context()
 with dpg.texture_registry(show=False):
     dpg.add_dynamic_texture(1024, 1024, [1.0] * (1024 * 1024 * 4), tag="dynamic_texture")
-dpg.create_viewport(title='Masked Image GUI', width=1400, height=1100)
+dpg.create_viewport(title='Masked Image GUI', width=1400, height=1120)
 
 with dpg.window(tag="left_window", label="Controls", pos=(10, 10), width=300, height=300, no_move=True):
     dpg.add_button(label="Open Folder", callback=open_folder_dialog)
@@ -65,7 +65,7 @@ with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 795), width=300, he
         dpg.add_text("Selected: 0", tag="selected_mask_count")
         dpg.add_button(label="Confirm Masks", tag="confirm_masks_button", show=False, callback=confirm_mask_selection_callback)
 
-with dpg.window(tag="right_window", label="Image Panel", pos=(320, 10), width=1024, height=1024, no_move=True):
+with dpg.window(tag="right_window", label="Image Panel", pos=(320, 10), width=1040, height=1060, no_move=True):
     with dpg.drawlist(tag="drawlist", width=1024, height=1024):
         dpg.draw_image("dynamic_texture", (0, 0), (1024, 1024))
     handler = dpg.add_item_handler_registry()

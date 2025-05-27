@@ -22,6 +22,7 @@ metadata_df = pd.DataFrame(columns=["filename", "z_min", "z_max", "rip_cells", "
 texture_cache = None
 last_show_masks = True
 last_selected = []
+display_map = {}
 
 def to_8bit(arr):
     norm = arr.astype(np.float32)
@@ -81,12 +82,32 @@ def blend_with_masks(gray):
     return rgba
 
 def refresh_contents_list(sender=None, app_data=None, user_data=None):
-    global current_folder
+    global current_folder, display_map
+    display_map = {}
+
     if current_folder is None:
         dpg.configure_item("contents_list", items=[])
-    else:
-        files = sorted([f for f in os.listdir(current_folder) if f.lower().endswith('.nd2')])
-        dpg.configure_item("contents_list", items=files)
+        return
+
+    files = sorted([f for f in os.listdir(current_folder) if f.lower().endswith('.nd2')])
+    display_items = []
+
+    for f in files:
+        tags = []
+        if f in metadata_df["filename"].values:
+            row = metadata_df.loc[metadata_df["filename"] == f].iloc[0]
+            if isinstance(row["rip_cells"], list) and row["rip_cells"]:
+                tags.append("[RIP]")
+            tags.append("[SAVED]")
+        tag_string = ''.join(tags)
+        display = f"{tag_string} {f}" if tag_string else f
+        display_items.append(display)
+        display_map[display] = f
+
+    dpg.configure_item("contents_list", items=display_items)
+
+
+    dpg.configure_item("contents_list", items=display_items)
 
 def open_folder_dialog(sender, app_data, user_data):
     global current_folder, opened_file
@@ -105,7 +126,8 @@ def open_folder_dialog(sender, app_data, user_data):
     dpg.set_value("status_text", "Folder loaded")
 
 def contents_list_callback(sender, app_data, user_data):
-    sel = dpg.get_value("contents_list")
+    display_name = dpg.get_value("contents_list")
+    sel = display_map.get(display_name, display_name)
     if sel != opened_file:
         for tag in ["z_range_group", "z_min_slider", "z_max_slider", "rip_group", "wga_group", "wga_checkbox", "wga_slider", "identifiers_group"]:
             if dpg.does_item_exist(tag):
@@ -120,7 +142,8 @@ def contents_list_callback(sender, app_data, user_data):
 
 def open_nd2_callback(sender, app_data, user_data):
     global opened_file, channel_zstack, channel2_stack, gray_img, mask_array, colors, selected_masks, texture_cache
-    sel = dpg.get_value("contents_list")
+    display_name = dpg.get_value("contents_list")
+    sel = display_map.get(display_name, display_name)
     if not sel:
         dpg.set_value("status_text", "No file selected")
         return
@@ -263,7 +286,7 @@ def save_metadata_callback(sender, app_data, user_data):
         "filename": opened_file,
         "z_min": z0,
         "z_max": z1,
-        "rip_cells": [],
+        "rip_cells": [],  # this clears any previously confirmed masks
         "sex": sex,
         "eye": eye,
         "time_min": time_min,
@@ -277,8 +300,14 @@ def save_metadata_callback(sender, app_data, user_data):
         metadata_df.loc[len(metadata_df)] = data
 
     dpg.set_value("status_text", f"Saved metadata for {opened_file}")
-    dpg.show_item("rip_group")
+    refresh_contents_list()
 
+    for display_name, real_name in display_map.items():
+        if real_name == opened_file:
+            dpg.set_value("contents_list", display_name)
+            break
+
+    dpg.show_item("rip_group")
 
 def run_rip_detector_callback(sender, app_data, user_data):
     global metadata_df, mask_array, colors, selected_masks, texture_cache, gray_img
@@ -408,3 +437,9 @@ def confirm_mask_selection_callback(sender, app_data, user_data):
         metadata_df.at[metadata_df.index[idx][0], "rip_cells"] = selected_masks.copy()
         dpg.set_value("selected_mask_count", f"Cells in rip: {sorted(selected_masks)}")
         dpg.set_value("status_text", f"Masks confirmed for {opened_file}")
+    
+    refresh_contents_list()
+    for display_name, real_name in display_map.items():
+        if real_name == opened_file:
+            dpg.set_value("contents_list", display_name)
+            break
