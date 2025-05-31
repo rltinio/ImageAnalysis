@@ -26,6 +26,7 @@ with dpg.window(tag="left_window", label="Controls", pos=(10, 10), width=300, he
     dpg.add_text("None", tag="dir_path_repeat")
     dpg.add_checkbox(label="eGFP cells", tag="opt_egfp", default_value=True)
     dpg.add_checkbox(label="Save MP details", tag="opt_save", default_value=True)
+    dpg.add_checkbox(label="Save Extracted Traces", tag="opt_save_traces", default_value=True)
     dpg.add_text("Status: Ready", tag="status_text")
 
 with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), width=300, height=465, no_move=True):

@@ -23,6 +23,7 @@ texture_cache = None
 last_show_masks = True
 last_selected = []
 display_map = {}
+confirmed_rip_masks = {}
 
 def to_8bit(arr):
     norm = arr.astype(np.float32)

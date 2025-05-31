@@ -190,10 +190,21 @@ def remove_outliers_local(centers_of_mass, num_closest_points=20, z_threshold=2)
             filtered_indices.append(i)
     return filtered_data, filtered_indices
 
-def organize_data(trace_results, mask_id):
-    df = pd.DataFrame({'trace': trace_results})
-    df['mask_id'] = mask_id
-    return df
+def organize_data(mask_id, z_sep, stack_depth, metadata_row, filename):
+    x_vals = ",".join(map(str, np.array(range(stack_depth)) * z_sep))
+
+    return pd.DataFrame({
+        "mask_id": [mask_id],
+        "X_vals": [x_vals],
+        "file_name": [filename],
+        "DJID": [metadata_row.get("djid", "")],
+        "Sex": [metadata_row.get("sex", "")],
+        "Eye": [metadata_row.get("eye", "")],
+        "Time_Min": [metadata_row.get("time_min", "")],
+        "eGFP_Value": [False],
+        "eGFP_Raw_Intensity": [0.0],
+        "in_rip": [False]
+    })
 
 def normalize(array):
     array = np.array(array)
@@ -215,7 +226,7 @@ def extract_traces():
     model_path_wga = 'CP_models/T5_WGA_V2'
     wga_model = models.CellposeModel(gpu=True, pretrained_model=model_path_wga)
     print('done loading models')
-    
+
     for idx, row in GUI_helpers.metadata_df.iterrows():
         filename = row.get("filename")
         if not isinstance(filename, str) or not filename.strip():
@@ -235,34 +246,33 @@ def extract_traces():
         with nd2.ND2File(file_path) as f:
             z_sep = f.voxel_size().z
             stack = to_8bit(f.asarray())
-            dapi_stack = stack[:, 0, :, :]
-            wga_stack = stack[:, 2, :, :]
-            cropped_dapi = dapi_stack[z_min:z_max+1]
-            cropped_wga = wga_stack[z_min:z_max+1]
+            cropped_stack = stack[z_min:z_max+1]
         print('Found file', z_sep)
 
-        proj = np.max(cropped_dapi, axis=0)
+        dapi_stack = cropped_stack[:, 0, :, :]
+        proj = np.max(dapi_stack, axis=0)
         enhanced = auto_brightness_contrast(proj)
-
 
         print('Now running dapi model')
         dapi_masks, _, _, _ = dapi_model.eval(enhanced, diameter=None, channels=[0, 0])
         print('Done running dapi model')
 
         print('Starting coords')
-        coords_3d = nuclei_centers_of_mass(cropped_dapi, dapi_masks)
+        coords_3d = nuclei_centers_of_mass(dapi_stack, dapi_masks)
         print(len(coords_3d))
         filtered_coords, filtered_idxs = remove_outliers_local(coords_3d, num_closest_points=15, z_threshold=2)
-        filtered_dapi_masks = extract_masks(dapi_masks, filtered_idxs)
 
-        mask_ids = np.delete(np.unique(filtered_dapi_masks), 0) - 1
+        mask_ids = np.delete(np.unique(dapi_masks), 0) - 1
 
         print('Found masks', mask_ids)
 
         for i in mask_ids:
+            if i not in filtered_idxs:
+                continue
+
             dpg.set_value("trace_status_text", f"Extracting mask {i} of {len(mask_ids)}")
 
-            single_mask = extract_masks(filtered_dapi_masks, i)
+            single_mask = extract_masks(dapi_masks, i, reset_mask_ids=False)
             print('single mask', np.unique(single_mask))
             diam = get_mask_diameter(single_mask)
             expansion = 50
@@ -280,26 +290,18 @@ def extract_traces():
             elif len(np.unique(cleaned_mask)) > 2:
                 cleaned_mask = closest_mask_2d(single_mask, cleaned_mask)
 
-            trace_results = get_traces(sq_stacks, cleaned_mask)
-
-            eGFP_sum = np.sum(sq_stacks[1][z_level][cleaned_mask.astype(bool)])
-            eGFP_sum_per_area = eGFP_sum / np.sum(cleaned_mask)
-
-            cell_data = organize_data(trace_results, i)
-            djid = row["djid"] if pd.notnull(row["djid"]) else ""
-            eye = row["eye"] if pd.notnull(row["eye"]) else ""
-            time_min = row["time_min"] if pd.notnull(row["time_min"]) else ""
             file_base = row["filename"] if pd.notnull(row["filename"]) else ""
+            cell_data = organize_data(i, z_sep, stack.shape[0], row, file_base)
 
-            nested_array = np.array(range(stack.shape[0])) * z_sep
-            cell_data['X_vals'] = [nested_array for _ in range(len(cell_data))]
-            cell_data['file_name'] = file_base
-            cell_data['DJID'] = djid
-            cell_data['Eye'] = eye
-            cell_data['Time_Min'] = time_min
-            cell_data['eGFP_Value'] = False
-            cell_data['eGFP_Raw_Intensity'] = eGFP_sum_per_area
-            cell_data['in_rip'] = False
+            for ch_idx, ch_name in zip(range(min(stack.shape[1], 4)), ['DAPI', 'eGFP', 'WGA', 'GLUT1']):
+                trace = get_traces(np.expand_dims(sq_stacks[ch_idx], axis=0), cleaned_mask)
+                cell_data[f"Y_vals_{ch_name}"] = [trace] * len(cell_data)
+                if ch_name == 'eGFP':
+                    eGFP_sum = np.sum(sq_stacks[1][z_level][cleaned_mask.astype(bool)])
+                    cell_data['eGFP_Raw_Intensity'] = eGFP_sum / np.sum(cleaned_mask)
+
+            rip_ids = row.get("rip_cells", [])
+            cell_data["in_rip"] = [i in rip_ids]
 
             results.append(cell_data)
 
@@ -307,9 +309,17 @@ def extract_traces():
 
     if results:
         trace_data_df = pd.concat(results, ignore_index=True)
-        egfp_vals = trace_data_df["eGFP_Raw_Intensity"].values
-        normalized_vals = normalize(egfp_vals)
-        trace_data_df["eGFP_Value"] = normalized_vals > 0.2
+        if "eGFP_Raw_Intensity" in trace_data_df:
+            egfp_vals = trace_data_df["eGFP_Raw_Intensity"].values
+            normalized_vals = normalize(egfp_vals)
+            trace_data_df["eGFP_Value"] = normalized_vals > 0.2
+
+        if dpg.get_value("opt_save_traces"):
+            folder_name = os.path.basename(GUI_helpers.current_folder.rstrip("/\\"))
+            csv_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_data.csv")
+            trace_data_df.to_csv(csv_path, index=False)
+            print(f"Saved traces to: {csv_path}")
+            dpg.add_text(default_value=f"Saved to: {csv_path}", parent="left_window")
 
     dpg.set_value("trace_file_status", "File: Done")
     dpg.set_value("trace_status_text", "Status: Complete")
