@@ -169,7 +169,7 @@ def get_traces(stacks, mask):
 def nuclei_centers_of_mass(stack, masks):
     ids = np.unique(masks)
     ids = ids[ids != 0]
-    return np.array([center_of_mass(stack, masks, idx) for idx in ids])
+    return np.array(center_of_mass(stack, labels=masks, index=ids))
 
 def remove_outliers_local(centers_of_mass, num_closest_points=20, z_threshold=2):
     if num_closest_points >= len(centers_of_mass):
@@ -260,6 +260,7 @@ def extract_traces():
         print('Starting coords')
         coords_3d = nuclei_centers_of_mass(dapi_stack, dapi_masks)
         print(len(coords_3d))
+        print('Starting filtering')
         filtered_coords, filtered_idxs = remove_outliers_local(coords_3d, num_closest_points=15, z_threshold=2)
 
         mask_ids = np.delete(np.unique(dapi_masks), 0) - 1
@@ -313,6 +314,10 @@ def extract_traces():
             egfp_vals = trace_data_df["eGFP_Raw_Intensity"].values
             normalized_vals = normalize(egfp_vals)
             trace_data_df["eGFP_Value"] = normalized_vals > 0.2
+
+        # Optional: preserve original mask ID
+        trace_data_df["original_mask_id"] = trace_data_df["mask_id"]
+        trace_data_df["mask_id"] = range(len(trace_data_df))  # Reset to 0...N
 
         if dpg.get_value("opt_save_traces"):
             folder_name = os.path.basename(GUI_helpers.current_folder.rstrip("/\\"))
