@@ -25,11 +25,12 @@ with dpg.window(tag="left_window", label="Controls", pos=(10, 10), width=300, he
     dpg.add_button(label="Open Folder", callback=open_folder_dialog)
     dpg.add_text("None", tag="dir_path_repeat")
     dpg.add_checkbox(label="eGFP cells", tag="opt_egfp", default_value=True)
-    dpg.add_checkbox(label="Save MP details", tag="opt_save", default_value=True)
+    dpg.add_checkbox(label="Save Meta Data", tag="opt_save_metadata", default_value=True)
     dpg.add_checkbox(label="Save Extracted Traces", tag="opt_save_traces", default_value=True)
+    dpg.add_checkbox(label="Save Analyzed Data", tag="opt_save_analyzed", default_value=True)    
     dpg.add_text("Status: Ready", tag="status_text")
 
-with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), width=300, height=465, no_move=True):
+with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), width=300, height=505, no_move=True):
     dpg.add_listbox(items=[], tag="contents_list", num_items=10, width=280, callback=contents_list_callback)
     dpg.add_button(label="Open .nd2", width = 280, callback=open_nd2_callback)
 
@@ -39,12 +40,17 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), w
         with dpg.group(horizontal=True):
             dpg.add_text("DJID:")
             dpg.add_input_text(tag="djid_input", readonly=False, width=39)
-            dpg.add_text("  Sex:")
+            dpg.add_text("Age (mo):")
+            dpg.add_input_text(tag="age_input", readonly=False, width=39)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Sex:")
             dpg.add_combo(items=["M", "F", "Unknown"], tag="sex_combo", label="", width=40)
-            dpg.add_text("  Eye:")
+            dpg.add_text("Eye:")
             dpg.add_combo(items=["L", "R", "Unknown"], tag="eye_combo", label="", width=40)
         with dpg.group(horizontal=True):
-
+            dpg.add_text("Genotype:")
+            dpg.add_combo(items=["Homo", "Het", "WT", "Unknown"], tag="gen_combo", label="", width=50)
+        with dpg.group(horizontal=True):
             dpg.add_text("Duration (min):")
             dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30, 60, 90", width=165)
 
@@ -58,7 +64,7 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), w
 
         dpg.add_spacer(height=10)
 
-with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 695), width=300, height=180, no_move=True):
+with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 735), width=300, height=90, no_move=True):
     with dpg.group(tag="rip_group", show=False):
         dpg.add_checkbox(label="Rip?", tag="rip_checkbox", callback=rip_checkbox_callback)
         with dpg.group(horizontal=True):
@@ -67,7 +73,7 @@ with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 695), width=300, he
         dpg.add_text("Selected: 0", tag="selected_mask_count")
         dpg.add_button(label="Confirm Masks", tag="confirm_masks_button", show=False, callback=confirm_mask_selection_callback)
 
-with dpg.window(tag="analysis_panel", label="Analysis Panel", pos=(10, 885), width=300, height=150, no_move=True):
+with dpg.window(tag="analysis_panel", label="Analysis Panel", pos=(10, 845), width=300, height=150, no_move=True):
     dpg.add_button(label="Extract Traces", tag="extract_traces_button", width=280)
     dpg.add_text("File: None", tag="trace_file_status", wrap=280)
     dpg.add_text("Status: Waiting", tag="trace_status_text", wrap=280)

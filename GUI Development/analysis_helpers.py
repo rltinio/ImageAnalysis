@@ -6,6 +6,8 @@ import nd2
 import cv2
 from skimage import exposure, measure
 from scipy.ndimage import center_of_mass
+from scipy.stats import skew
+from scipy.signal import find_peaks
 from skimage.measure import label, regionprops
 from cellpose import models, denoise
 import GUI_helpers
@@ -195,6 +197,7 @@ def organize_data(mask_id, z_sep, stack_depth, metadata_row, filename):
 
     return pd.DataFrame({
         "mask_id": [mask_id],
+        "Slice_Seperation": z_sep,
         "X_vals": [x_vals],
         "file_name": [filename],
         "DJID": [metadata_row.get("djid", "")],
@@ -315,17 +318,253 @@ def extract_traces():
             normalized_vals = normalize(egfp_vals)
             trace_data_df["eGFP_Value"] = normalized_vals > 0.2
 
-        # Optional: preserve original mask ID
         trace_data_df["original_mask_id"] = trace_data_df["mask_id"]
-        trace_data_df["mask_id"] = range(len(trace_data_df))  # Reset to 0...N
+        trace_data_df["mask_id"] = range(len(trace_data_df))
 
-        if dpg.get_value("opt_save_traces"):
+        if dpg.get_value("opt_save_metadata"):
             folder_name = os.path.basename(GUI_helpers.current_folder.rstrip("/\\"))
-            csv_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_data.csv")
+            csv_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_raw.csv")
             trace_data_df.to_csv(csv_path, index=False)
             print(f"Saved traces to: {csv_path}")
             dpg.add_text(default_value=f"Saved to: {csv_path}", parent="left_window")
 
+            if GUI_helpers.metadata_df is not None:
+                meta_csv_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_metadata.csv")
+                GUI_helpers.metadata_df.to_csv(meta_csv_path, index=False)
+                print(f"Saved metadata to: {meta_csv_path}")
+        
+        # Save processed analysis
+        if dpg.get_value("opt_save_analyzed"):
+            processed_df = run_integral_analysis(trace_data_df)
+            processed_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_processed.csv")
+            processed_df.to_csv(processed_path, index=False)
+            print(f"Saved processed analysis to: {processed_path}")
+            dpg.add_text(default_value=f"Saved processed data to: {processed_path}", parent="left_window")
+            
+
     dpg.set_value("trace_file_status", "File: Done")
     dpg.set_value("trace_status_text", "Status: Complete")
     dpg.configure_item("extract_traces_button", enabled=True)
+
+def run_integral_analysis(trace_data_df):
+    df = trace_data_df.copy()
+
+    print(f"[DEBUG] Starting analysis with {len(df)} rows")
+
+    # Add separation and cell identity
+    df["Cell"] = df["file_name"].astype(str) + "_mask" + df["mask_id"].astype(str)
+
+    # Peak detection
+    df = WGA_Peaks_Finder_V2(df)
+    print(f"[DEBUG] After WGA_Peaks_Finder_V2: {len(df)} rows")
+    print("[DEBUG] Sample DAPI_peak_index values:")
+    print(df["DAPI_peak_index"].head(10))
+    print(df["DAPI_peak_index"].apply(type).value_counts())
+
+
+    df = filter_out_unclear_DAPI(df)
+    print(f"[DEBUG] After filter_out_unclear_DAPI: {len(df)} rows")
+
+    if len(df) == 0:
+        print("[ERROR] No valid cells remaining after DAPI filtering.")
+        return df
+
+    # Integrals
+    df = Top_Bottom_Indices_V2(df)
+    df = TopMidBot_Integrals_V2(df)
+    df = Surface_Integrals_V2(df)
+
+    df = Replace_NaNs_With_None(df)
+
+    print(f"[DEBUG] Final dataframe shape: {df.shape}")
+    return df
+
+def WGA_Peaks_Finder_V2(dataframe, prom_val: float = 1.0):
+    """
+    Identifies WGA peaks before and after a single DAPI peak for each row.
+    Adds:
+    - WGA_Middle_Indices: [peak_before_dapi, peak_after_dapi]
+    - DAPI_peak_index: index of peak in DAPI channel
+    - Length: distance between WGA peaks in microns
+    - Cell: integer ID
+    """
+    wga_middle = []
+    dapi_peaks = []
+    lengths = []
+    cell_ids = []
+
+    for idx, row in dataframe.iterrows():
+        y_wga = row.get("Y_vals_WGA", [])
+        y_dapi = row.get("Y_vals_DAPI", [])
+        sep = row.get("Slice_Seperation", np.nan)
+
+        print(f"[DEBUG] Cell index: {idx}")
+        print(f"[DEBUG] y_wga type: {type(y_wga)}, len: {len(y_wga) if hasattr(y_wga, '__len__') else 'N/A'}")
+        print(f"[DEBUG] y_dapi type: {type(y_dapi)}, len: {len(y_dapi) if hasattr(y_dapi, '__len__') else 'N/A'}")
+        print(f"[DEBUG] sep: {sep}")
+
+        dapi_dist = int(12 / sep)
+        wga_dist = int(1.05 / sep)
+
+        dapi_indices, _ = find_peaks(y_dapi, prominence=prom_val, distance=dapi_dist)
+        print('DEBUG', dapi_indices)
+        wga_indices, _ = find_peaks(y_wga, prominence=prom_val, distance=wga_dist)
+
+        peak_before = np.nan
+        peak_after = np.nan
+
+        if len(dapi_indices) == 1:
+            dapi_idx = dapi_indices[0]
+            for peak in wga_indices:
+                if peak < dapi_idx:
+                    peak_before = peak
+                elif peak > dapi_idx and np.isnan(peak_after):
+                    peak_after = peak
+                    break
+        else:
+            dapi_idx = np.nan
+
+        dist = (peak_after - peak_before) * sep if not np.isnan(peak_before) and not np.isnan(peak_after) else np.nan
+
+        wga_middle.append([peak_before, peak_after])
+        dapi_peaks.append(dapi_idx)
+        lengths.append(dist)
+        cell_ids.append(idx)
+
+    dataframe["WGA_Middle_Indices"] = wga_middle
+    dataframe["DAPI_peak_index"] = dapi_peaks
+    dataframe["Length"] = lengths
+    dataframe["Cell"] = cell_ids
+
+    return dataframe
+
+def filter_out_unclear_DAPI(dataframe):
+    """
+    Keeps rows where 'DAPI_peak_index' is a valid number (not NaN or None).
+    Prints out the number and identities of filtered-out cells for debugging.
+    """
+
+    valid_rows = dataframe[dataframe["DAPI_peak_index"].apply(lambda x: pd.notna(x) and isinstance(x, (int, float)))].copy()
+    filtered_out = dataframe[~dataframe.index.isin(valid_rows.index)]
+
+    if not filtered_out.empty:
+        print("Filtered out cells (no valid DAPI peak):", filtered_out["Cell"].unique().tolist())
+    else:
+        print("No cells were filtered out.")
+
+    return valid_rows.reset_index(drop=True)
+
+def Top_Bottom_Indices_V2(dataframe, microns_extension: float = 1.5):
+    '''
+    Calculates WGA_Top_Indices and WGA_Bottom_Indices based on Slice_Seperation and WGA_Middle_Indices.
+    '''
+    grouped = dataframe.groupby('Cell')
+    slice_separation = grouped['Slice_Seperation'].first()
+    first_peaks = grouped['WGA_Middle_Indices'].apply(lambda x: x.iloc[0] if len(x) > 0 else [np.nan, np.nan])
+
+    index_offset = (microns_extension / slice_separation).fillna(0).astype(int)
+
+    l_middle = first_peaks.apply(lambda x: x[0] if len(x) > 0 else np.nan)
+    r_middle = first_peaks.apply(lambda x: x[1] if len(x) > 1 else np.nan)
+
+    l_top = np.maximum(l_middle - index_offset, 0)
+    r_bot = r_middle + index_offset
+
+    r_middle = r_middle.apply(lambda x: None if pd.isna(x) else x)
+    r_bot = r_bot.apply(lambda x: None if pd.isna(x) else x)
+
+    idx_df = pd.DataFrame({
+        'Cell': grouped.size().index,
+        'WGA_Top_Indices': list(zip(l_top, l_middle)),
+        'WGA_Bottom_Indices': list(zip(r_middle, r_bot))
+    })
+
+    dataframe["WGA_Top_Indices"] = list(zip(l_top, l_middle))
+    dataframe["WGA_Bottom_Indices"] = list(zip(r_middle, r_bot))
+    return dataframe
+
+def TopMidBot_Integrals_V2(dataframe):
+    """
+    Calculates WGA Top, Middle, Bottom integrals using defined index pairs.
+    Adds columns: WGA_Top_Integral, WGA_Middle_Integral, WGA_Bottom_Integral
+    """
+    def integral_calculator(y_vals, indices):
+        if not isinstance(indices, (list, tuple)) or pd.isna(indices[0]) or pd.isna(indices[1]):
+            return None
+        try:
+            start_idx, end_idx = int(indices[0]), int(indices[1])
+            start_idx = max(start_idx, 0)
+            end_idx = min(end_idx, len(y_vals))
+            if start_idx >= end_idx:
+                return None
+            return float(np.sum(np.array(y_vals)[start_idx:end_idx]))
+        except:
+            return None
+
+    for section in ['Middle', 'Top', 'Bottom']:
+        col_name = f"WGA_{section}_Integral"
+        index_col = f"WGA_{section}_Indices"
+        dataframe[col_name] = dataframe.apply(
+            lambda row: integral_calculator(row.get('Y_vals_WGA', []), row.get(index_col)), axis=1
+        )
+
+    return dataframe
+
+def Surface_Integrals_V2(dataframe):
+    def compute_surface(row):
+        peak_indices = row["WGA_Middle_Indices"]
+        x_vals = row["X_vals"]
+        y_G = row["Y_vals_GLUT1"]
+        y_W = row["Y_vals_WGA"]
+        slice_separation = row["Slice_Seperation"]
+        radius = 0.5
+        idx_offset = int(radius / slice_separation)
+
+        # Define borders for top
+        top_lborder = max(int(peak_indices[0]) - idx_offset, 0)
+        top_rborder = min(int(peak_indices[0]) + idx_offset, len(x_vals))
+
+        # Define borders for bottom (may be None)
+        if pd.isna(peak_indices[1]):
+            bottom_lborder = bottom_rborder = None
+        else:
+            bottom_lborder = max(int(peak_indices[1]) - idx_offset, 0)
+            bottom_rborder = min(int(peak_indices[1]) + idx_offset, len(x_vals))
+
+        # Integrals
+        top_G = np.sum(y_G[top_lborder:top_rborder])
+        top_W = np.sum(y_W[top_lborder:top_rborder])
+        bot_G = np.sum(y_G[bottom_lborder:bottom_rborder]) if bottom_lborder is not None else None
+        bot_W = np.sum(y_W[bottom_lborder:bottom_rborder]) if bottom_lborder is not None else None
+
+        return pd.Series({
+            "GluT1_Top_Surface_Integral": top_G,
+            "GluT1_Bot_Surface_Integral": bot_G,
+            "WGA_Top_Surface_Integral": top_W,
+            "WGA_Bot_Surface_Integral": bot_W,
+            "Top_Surface_Ratio": top_G / top_W if top_W else None,
+            "Bot_Surface_Ratio": bot_G / bot_W if bot_W else None,
+        })
+
+    surface_df = dataframe.apply(compute_surface, axis=1)
+    for col in surface_df.columns:
+        dataframe[col] = surface_df[col]
+    return dataframe
+
+def Replace_NaNs_With_None(dataframe):
+    """
+    Replaces all `NaN` values in a DataFrame with `None`, including those inside lists and tuples.
+    """
+    def replace_in_iterable(iterable):
+        return type(iterable)(None if pd.isna(item) else item for item in iterable)
+
+    def replace_nans(item):
+        if isinstance(item, (list, tuple)):
+            return replace_in_iterable(item)
+        elif pd.isna(item):
+            return None
+        else:
+            return item
+
+    return dataframe.applymap(replace_nans)
+

@@ -1,0 +1,1 @@
+mask_id,X_vals,file_name,DJID,Sex,Eye,Time_Min,eGFP_Value,eGFP_Raw_Intensity,in_rip,Y_vals_DAPI,Y_vals_eGFP,Y_vals_WGA,Y_vals_GLUT1,original_mask_id,Slice_Seperation,Cell,WGA_Middle_Indices,DAPI_peak_index,Length,WGA_Top_Indices,WGA_Bottom_Indices,WGA_Middle_Integral,WGA_Top_Integral,WGA_Bottom_Integral
