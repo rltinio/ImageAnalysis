@@ -218,7 +218,7 @@ def normalize(array):
 
 def extract_traces():
     if GUI_helpers.metadata_df.empty:
-        dpg.set_value("status_text", "No files have saved metadata.")
+        dpg.set_value("status_text", "No files are ready for analysis.")
         return
 
     global trace_data_df
@@ -342,6 +342,19 @@ def extract_traces():
         # Save processed analysis
         if dpg.get_value("opt_save_analyzed"):
             processed_df = run_integral_analysis(trace_data_df)
+
+            ## Post processing 
+            drop_cols = ['X_vals', 'Y_vals_DAPI', 'Y_vals_eGFP','Y_vals_WGA', 'Y_vals_GLUT1',
+                        'original_mask_id', 'Cell','WGA_Middle_Indices', 'DAPI_peak_index',
+                        'WGA_Top_Indices','WGA_Bottom_Indices',]
+
+            rename_cols = {'Age': 'Age_Months', 'Treatment':'Experimental_Condition', 'in_rip':'In_Rip',
+                            'Time_Min': 'Time_Condition', 'Length':'Length_um'}
+
+            processed_df.drop(columns= drop_cols, axis = 1, inplace = True)
+            processed_df.rename(columns =  rename_cols, inplace = True)
+            ##
+
             processed_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_processed.csv")
             processed_df.to_csv(processed_path, index=False)
             print(f"Saved processed analysis to: {processed_path}")
@@ -507,12 +520,13 @@ def TopMidBot_Integrals_V2(dataframe):
             return None
 
     for section in ['Middle', 'Top', 'Bottom']:
-        col_name = f"WGA_{section}_Integral"
-        index_col = f"WGA_{section}_Indices"
-        dataframe[col_name] = dataframe.apply(
-            lambda row: integral_calculator(row.get('Y_vals_WGA', []), row.get(index_col)), axis=1
-        )
-
+        WGA_col_name = f"WGA_{section}_Integral"
+        WGA_index_col = f"WGA_{section}_Indices"
+        dataframe[WGA_col_name] = dataframe.apply(lambda row: integral_calculator(row.get('Y_vals_WGA', []),
+                                                                              row.get(WGA_index_col)), axis=1)
+        GLUT1_col_name = f"GLUT1_{section}_Integral"
+        dataframe[GLUT1_col_name] = dataframe.apply(lambda row: integral_calculator(row.get('Y_vals_GLUT1', []),
+                                                                              row.get(WGA_index_col)), axis=1)
     return dataframe
 
 def Surface_Integrals_V2(dataframe):
@@ -538,8 +552,8 @@ def Surface_Integrals_V2(dataframe):
         bot_W = get_integral(peak_indices[1], y_W)
 
         return pd.Series({
-            "GluT1_Top_Surface_Integral": top_G,
-            "GluT1_Bot_Surface_Integral": bot_G,
+            "GLUT1_Top_Surface_Integral": top_G,
+            "GLUT1_Bot_Surface_Integral": bot_G,
             "WGA_Top_Surface_Integral": top_W,
             "WGA_Bot_Surface_Integral": bot_W,
             "Top_Surface_Ratio": top_G / top_W if not pd.isna(top_G) and not pd.isna(top_W) and top_W != 0 else np.nan,

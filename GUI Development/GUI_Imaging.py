@@ -24,7 +24,6 @@ dpg.create_viewport(title='GUI', width=1430, height=1120)
 with dpg.window(tag="left_window", label="Controls", pos=(10, 10), width=330, height=200, no_move=True):
     dpg.add_button(label="Open Folder", callback=open_folder_dialog)
     dpg.add_text("None", tag="dir_path_repeat")
-    dpg.add_checkbox(label="eGFP cells", tag="opt_egfp", default_value=True)
     dpg.add_checkbox(label="Save Meta Data", tag="opt_save_metadata", default_value=True)
     dpg.add_checkbox(label="Save Extracted Traces", tag="opt_save_traces", default_value=True)
     dpg.add_checkbox(label="Save Analyzed Data", tag="opt_save_analyzed", default_value=True)    
@@ -43,17 +42,17 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), w
             dpg.add_text("Age (mo):")
             dpg.add_input_text(tag="age_input", readonly=False, width=25)
             dpg.add_text("Genotype:")
-            dpg.add_combo(items=["Homo", "Het", "WT", "Unknown"], tag="gen_combo", label="", width=50)
+            dpg.add_combo(items=["Homo", "Het", "WT", "Unknown"], tag="gen_combo", label="", width=51)
         with dpg.group(horizontal=True):
             dpg.add_text("Sex:")
             dpg.add_combo(items=["M", "F", "Unknown"], tag="sex_combo", label="", width=30)
             dpg.add_text("Eye:")
             dpg.add_combo(items=["L", "R", "Unknown"], tag="eye_combo", label="", width=30)
             dpg.add_text("Treatment:")
-            dpg.add_combo(items=["Experimental", "Control"], tag="treatment_combo", label="", width=87)
+            dpg.add_combo(items=["Experimental", "Control"], tag="treatment_combo", label="", width=88)
         with dpg.group(horizontal=True):
             dpg.add_text("Duration (min):")
-            dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30, 60, 90", width=200)
+            dpg.add_input_text(tag="time_input", hint="e.g. 0, 15, 30, 60, 90", width=201)
 
     dpg.add_spacer(height=10)
 
@@ -65,7 +64,7 @@ with dpg.window(tag="contents_window", label="Folder Contents", pos=(10, 220), w
 
         dpg.add_spacer(height=10)
 
-with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 735), width=330, height=120, no_move=True):
+with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 735), width=330, height=125, no_move=True):
     with dpg.group(tag="rip_group", show=False):
         dpg.add_checkbox(label="Rip?", tag="rip_checkbox", callback=rip_checkbox_callback)
         with dpg.group(horizontal=True):
@@ -74,7 +73,7 @@ with dpg.window(tag="rip_panel", label="Rip Panel", pos=(10, 735), width=330, he
         dpg.add_text("Selected: 0", tag="selected_mask_count")
         dpg.add_button(label="Confirm Masks", tag="confirm_masks_button", show=False, callback=confirm_mask_selection_callback)
 
-with dpg.window(tag="analysis_panel", label="Analysis Panel", pos=(10, 865), width=330, height=150, no_move=True):
+with dpg.window(tag="analysis_panel", label="Analysis Panel", pos=(10, 870), width=330, height=150, no_move=True):
     dpg.add_button(label="Extract Traces", tag="extract_traces_button", width=315)
     dpg.add_text("File: None", tag="trace_file_status", wrap=280)
     dpg.add_text("Status: Waiting", tag="trace_status_text", wrap=280)

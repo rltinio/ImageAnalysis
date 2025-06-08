@@ -453,7 +453,7 @@ def add_z_range_widget(parent, depth):
             dpg.delete_item(tag)
     mid = depth // 2
     with dpg.group(parent=parent, horizontal=False, tag="z_range_group"):
-        dpg.add_text('Set Z-Boundaries:')
+        dpg.add_text('Set Z-Boundaries')
         with dpg.group(horizontal=True):
             dpg.add_text("Min Z:")
             dpg.add_slider_int(label="", tag="z_min_slider", min_value=0, max_value=mid, default_value=0, callback=z_slider_callback, width = 264)
