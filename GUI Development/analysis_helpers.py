@@ -203,6 +203,9 @@ def organize_data(mask_id, z_sep, stack_depth, metadata_row, filename):
         "DJID": [metadata_row.get("djid", "")],
         "Sex": [metadata_row.get("sex", "")],
         "Eye": [metadata_row.get("eye", "")],
+        "Age": [metadata_row.get("age", "")],  # NEW
+        "Genotype": [metadata_row.get("genotype", "")],  # NEW
+        "Treatment": [metadata_row.get("treatment", "")],  # NEW
         "Time_Min": [metadata_row.get("time_min", "")],
         "eGFP_Value": [False],
         "eGFP_Raw_Intensity": [0.0],
@@ -214,6 +217,10 @@ def normalize(array):
     return (array - array.min()) / (array.max() - array.min())
 
 def extract_traces():
+    if GUI_helpers.metadata_df.empty:
+        dpg.set_value("status_text", "No files have saved metadata.")
+        return
+
     global trace_data_df
     print('extract traces')
 
@@ -326,7 +333,6 @@ def extract_traces():
             csv_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_raw.csv")
             trace_data_df.to_csv(csv_path, index=False)
             print(f"Saved traces to: {csv_path}")
-            dpg.add_text(default_value=f"Saved to: {csv_path}", parent="left_window")
 
             if GUI_helpers.metadata_df is not None:
                 meta_csv_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_metadata.csv")
@@ -339,11 +345,10 @@ def extract_traces():
             processed_path = os.path.join(GUI_helpers.current_folder, f"{folder_name}_processed.csv")
             processed_df.to_csv(processed_path, index=False)
             print(f"Saved processed analysis to: {processed_path}")
-            dpg.add_text(default_value=f"Saved processed data to: {processed_path}", parent="left_window")
             
 
     dpg.set_value("trace_file_status", "File: Done")
-    dpg.set_value("trace_status_text", "Status: Complete")
+    dpg.set_value("trace_status_text", f"Status: Saved to {processed_path}")
     dpg.configure_item("extract_traces_button", enabled=True)
 
 def run_integral_analysis(trace_data_df):
@@ -512,40 +517,35 @@ def TopMidBot_Integrals_V2(dataframe):
 
 def Surface_Integrals_V2(dataframe):
     def compute_surface(row):
-        peak_indices = row["WGA_Middle_Indices"]
-        x_vals = row["X_vals"]
-        y_G = row["Y_vals_GLUT1"]
-        y_W = row["Y_vals_WGA"]
-        slice_separation = row["Slice_Seperation"]
-        radius = 0.5
-        idx_offset = int(radius / slice_separation)
+        peak_indices = row.get("WGA_Middle_Indices", [np.nan, np.nan])
+        x_vals = row.get("X_vals", [])
+        y_G = row.get("Y_vals_GLUT1", [])
+        y_W = row.get("Y_vals_WGA", [])
+        sep = row.get("Slice_Seperation", None)
+        idx_offset = int(1.5 / sep) if sep else 3
 
-        # Define borders for top
-        top_lborder = max(int(peak_indices[0]) - idx_offset, 0)
-        top_rborder = min(int(peak_indices[0]) + idx_offset, len(x_vals))
+        def get_integral(idx, y_vals):
+            if pd.isna(idx):
+                return np.nan
+            idx = int(idx)
+            left = max(idx - idx_offset, 0)
+            right = min(idx + idx_offset, len(x_vals))
+            return np.sum(y_vals[left:right])
 
-        # Define borders for bottom (may be None)
-        if pd.isna(peak_indices[1]):
-            bottom_lborder = bottom_rborder = None
-        else:
-            bottom_lborder = max(int(peak_indices[1]) - idx_offset, 0)
-            bottom_rborder = min(int(peak_indices[1]) + idx_offset, len(x_vals))
-
-        # Integrals
-        top_G = np.sum(y_G[top_lborder:top_rborder])
-        top_W = np.sum(y_W[top_lborder:top_rborder])
-        bot_G = np.sum(y_G[bottom_lborder:bottom_rborder]) if bottom_lborder is not None else None
-        bot_W = np.sum(y_W[bottom_lborder:bottom_rborder]) if bottom_lborder is not None else None
+        top_G = get_integral(peak_indices[0], y_G)
+        bot_G = get_integral(peak_indices[1], y_G)
+        top_W = get_integral(peak_indices[0], y_W)
+        bot_W = get_integral(peak_indices[1], y_W)
 
         return pd.Series({
             "GluT1_Top_Surface_Integral": top_G,
             "GluT1_Bot_Surface_Integral": bot_G,
             "WGA_Top_Surface_Integral": top_W,
             "WGA_Bot_Surface_Integral": bot_W,
-            "Top_Surface_Ratio": top_G / top_W if top_W else None,
-            "Bot_Surface_Ratio": bot_G / bot_W if bot_W else None,
+            "Top_Surface_Ratio": top_G / top_W if not pd.isna(top_G) and not pd.isna(top_W) and top_W != 0 else np.nan,
+            "Bot_Surface_Ratio": bot_G / bot_W if not pd.isna(bot_G) and not pd.isna(bot_W) and bot_W != 0 else np.nan,
         })
-
+    
     surface_df = dataframe.apply(compute_surface, axis=1)
     for col in surface_df.columns:
         dataframe[col] = surface_df[col]
@@ -559,12 +559,12 @@ def Replace_NaNs_With_None(dataframe):
         return type(iterable)(None if pd.isna(item) else item for item in iterable)
 
     def replace_nans(item):
-        if isinstance(item, (list, tuple)):
-            return replace_in_iterable(item)
-        elif pd.isna(item):
+        if isinstance(item, float) and np.isnan(item):
             return None
-        else:
+        elif isinstance(item, (int, str, list, np.ndarray)):
             return item
+        elif pd.api.types.is_scalar(item) and pd.isna(item):
+            return None
+        return item
 
     return dataframe.applymap(replace_nans)
-

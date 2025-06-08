@@ -18,7 +18,7 @@ gray_img = None
 mask_array = None
 colors = {}
 selected_masks = []
-metadata_df = pd.DataFrame(columns=["filename", "z_min", "z_max", "rip_cells", "sex", "eye", "time_min", "djid"])
+metadata_df = pd.DataFrame(columns=["filename", "z_min", "z_max", "rip_cells", "sex", "eye", "time_min", "djid", "age", "genotype", "treatment"])
 texture_cache = None
 last_show_masks = True
 last_selected = []
@@ -187,6 +187,9 @@ def open_nd2_callback(sender, app_data, user_data):
         # Clear other identifier fields
         dpg.set_value("sex_combo", "")
         dpg.set_value("time_input", "")
+        dpg.set_value("age_input", "")
+        dpg.set_value("gen_combo", "")
+        dpg.set_value("treatment_combo", "")
 
         # Reset WGA widgets
         dpg.set_value("wga_checkbox", False)
@@ -233,6 +236,12 @@ def open_nd2_callback(sender, app_data, user_data):
             dpg.set_value("time_input", str(int(row["time_min"])))
         if pd.notnull(row["djid"]):
             dpg.set_value("djid_input", str(row["djid"]))
+        if pd.notnull(row["age"]):
+            dpg.set_value("age_input", str(row["age"]))
+        if pd.notnull(row["genotype"]):
+            dpg.set_value("gen_combo", row["genotype"])
+        if pd.notnull(row["treatment"]):
+            dpg.set_value("treatment_combo", row["treatment"])
 
 def z_slider_callback(sender, app_data, user_data):
     global gray_img
@@ -264,16 +273,32 @@ def save_metadata_callback(sender, app_data, user_data):
     eye = dpg.get_value("eye_combo")
     time_str = dpg.get_value("time_input")
     djid = dpg.get_value("djid_input")
+    age = dpg.get_value("age_input")
+    genotype = dpg.get_value("gen_combo")
+    treatment = dpg.get_value("treatment_combo")
 
+    if not djid.strip():
+        dpg.set_value("status_text", "Please enter DJID.")
+        return
+    if not age.strip():
+        dpg.set_value("status_text", "Please enter age.")
+        return
     if not sex:
         dpg.set_value("status_text", "Please select a sex.")
         return
     if not eye:
         dpg.set_value("status_text", "Please select an eye.")
         return
+    if not genotype:
+        dpg.set_value("status_text", "Please select a genotype.")
+        return
+    if not treatment:
+        dpg.set_value("status_text", "Please select a treatment group.")
+        return
     if not time_str.strip():
         dpg.set_value("status_text", "Time condition is required.")
         return
+
     try:
         time_min = int(time_str)
     except ValueError:
@@ -287,11 +312,14 @@ def save_metadata_callback(sender, app_data, user_data):
         "filename": opened_file,
         "z_min": z0,
         "z_max": z1,
-        "rip_cells": [],  # this clears any previously confirmed masks
+        "rip_cells": [],
         "sex": sex,
         "eye": eye,
         "time_min": time_min,
-        "djid": djid
+        "djid": djid,
+        "age": age,
+        "genotype": genotype,
+        "treatment": treatment
     }
 
     if opened_file in metadata_df["filename"].values:
@@ -425,11 +453,15 @@ def add_z_range_widget(parent, depth):
             dpg.delete_item(tag)
     mid = depth // 2
     with dpg.group(parent=parent, horizontal=False, tag="z_range_group"):
-        dpg.add_text('Set Z-Boundaries')
-        dpg.add_slider_int(label="Min Z", tag="z_min_slider", min_value=0, max_value=mid, default_value=0, callback=z_slider_callback)
-        dpg.add_slider_int(label="Max Z", tag="z_max_slider", min_value=mid, max_value=depth - 1, default_value=depth - 1, callback=z_slider_callback)
-        dpg.add_spacer(height=10)
-        dpg.add_button(label="Save Info", tag="save_metadata_button", show=True, callback=save_metadata_callback, width=280)
+        dpg.add_text('Set Z-Boundaries:')
+        with dpg.group(horizontal=True):
+            dpg.add_text("Min Z:")
+            dpg.add_slider_int(label="", tag="z_min_slider", min_value=0, max_value=mid, default_value=0, callback=z_slider_callback, width = 264)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Max Z:")
+            dpg.add_slider_int(label="", tag="z_max_slider", min_value=mid, max_value=depth - 1, default_value=depth - 1, callback=z_slider_callback, width = 264)
+        dpg.add_spacer(height=20)
+        dpg.add_button(label="Save Info", tag="save_metadata_button", show=True, callback=save_metadata_callback, width=315)
 
 def confirm_mask_selection_callback(sender, app_data, user_data):
     global metadata_df, selected_masks
