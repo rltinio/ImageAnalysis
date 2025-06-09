@@ -111,20 +111,28 @@ def refresh_contents_list(sender=None, app_data=None, user_data=None):
     dpg.configure_item("contents_list", items=display_items)
 
 def open_folder_dialog(sender, app_data, user_data):
-    global current_folder, opened_file
-    root = tk.Tk(); root.withdraw()
-    folder = filedialog.askdirectory(); root.destroy()
-    if not folder:
-        return
-    current_folder = folder
-    opened_file = None
-    two_level = f"{os.path.basename(os.path.dirname(folder))}\\{os.path.basename(folder)}"
-    dpg.set_value("dir_path_repeat", two_level)
-    refresh_contents_list()
-    for tag in ("z_range_group","rip_group","wga_group"):
-        if dpg.does_item_exist(tag):
-            dpg.hide_item(tag)
-    dpg.set_value("status_text", "Folder loaded")
+
+    def show_dialog():
+        root = tk.Tk()
+        root.withdraw()
+        root.update()
+        folder = filedialog.askdirectory()
+        root.destroy()
+
+        if not folder:
+            return
+
+        # Do UI updates via dpg thread
+        dpg.set_value("dir_path_repeat", f"{os.path.basename(os.path.dirname(folder))}/{os.path.basename(folder)}")
+        refresh_contents_list()
+        for tag in ("z_range_group", "rip_group", "wga_group"):
+            if dpg.does_item_exist(tag):
+                dpg.hide_item(tag)
+        dpg.set_value("status_text", "Folder loaded")
+
+    dpg.split_frame()
+    dpg.set_frame_callback(-1, show_dialog)
+
 
 def contents_list_callback(sender, app_data, user_data):
     display_name = dpg.get_value("contents_list")
