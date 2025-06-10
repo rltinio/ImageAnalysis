@@ -12,6 +12,8 @@ from skimage.measure import label, regionprops
 from cellpose import models, denoise
 import GUI_helpers
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 trace_data_df = None
 
 def auto_brightness_contrast(image):
@@ -230,10 +232,10 @@ def extract_traces():
 
     results = []
 
-    dapi_model_path = 'CP_models/T5_DAPI_V4'
+    dapi_model_path = os.path.join(ROOT_DIR, 'CP_models', 'T5_DAPI_V4')
     dapi_model = denoise.CellposeDenoiseModel(gpu=True, model_type=dapi_model_path, restore_type="deblur_cyto3")
 
-    model_path_wga = 'CP_models/T5_WGA_V2'
+    model_path_wga = os.path.join(ROOT_DIR, 'CP_models', 'T5_WGA_V2')
     wga_model = models.CellposeModel(gpu=True, pretrained_model=model_path_wga)
     print('done loading models')
 

@@ -9,6 +9,9 @@ from cellpose import models, denoise
 from skimage.morphology import binary_erosion, disk
 from skimage import img_as_ubyte, exposure
 import cv2
+from fdialog import FileDialog
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 current_folder = None
 opened_file = None
@@ -109,6 +112,30 @@ def refresh_contents_list(sender=None, app_data=None, user_data=None):
 
 
     dpg.configure_item("contents_list", items=display_items)
+
+def handle_folder_selection(folder):
+    global current_folder, opened_file
+    current_folder = folder
+    opened_file = None
+    two_level = f"{os.path.basename(os.path.dirname(folder))}/{os.path.basename(folder)}"
+    dpg.set_value("dir_path_repeat", two_level)
+    refresh_contents_list()
+    for tag in ("z_range_group", "rip_group", "wga_group"):
+        if dpg.does_item_exist(tag):
+            dpg.hide_item(tag)
+    dpg.set_value("status_text", "Folder loaded")
+
+def get_folder_picker():
+    def folder_selected_callback(paths):
+        if paths:
+            handle_folder_selection(paths[0])
+    return FileDialog(
+        callback=folder_selected_callback,
+        dirs_only=True,
+        default_path=".",
+        modal=False,
+        allow_drag=False
+    )   
 
 def open_folder_dialog(sender, app_data, user_data):
     global current_folder, opened_file
@@ -363,7 +390,7 @@ def run_rip_detector_callback(sender, app_data, user_data):
     update_texture(gray_img, force=True)
 
     mp_DAPI = auto_brightness_contrast(gray_img)
-    model_path = 'CP_models/T5_DAPI_V4'
+    model_path = os.path.join(ROOT_DIR, 'CP_models', 'T5_DAPI_V4')
     deblur_model = denoise.CellposeDenoiseModel(gpu=True, model_type=model_path, restore_type="deblur_cyto3")
     masks, _, _, _ = deblur_model.eval(mp_DAPI, diameter=None, channels=[0, 0])
 

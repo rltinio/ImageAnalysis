@@ -1,8 +1,9 @@
-import os
 import dearpygui.dearpygui as dpg
+from fdialog import FileDialog
+import os
+import GUI_helpers as gh
 from GUI_helpers import (
     refresh_contents_list,
-    open_folder_dialog,
     contents_list_callback,
     open_nd2_callback,
     z_slider_callback,
@@ -16,13 +17,47 @@ from GUI_helpers import (
 )
 from analysis_helpers import extract_traces
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(ROOT_DIR)
+print("[DEBUG] CWD:", os.getcwd())
+
 dpg.create_context()
+
+def folder_selected_callback(paths):
+    if not paths:
+        return
+
+    folder = paths[0]
+    print(f"[DEBUG] Selected folder: {folder}")
+
+    gh.current_folder = folder
+    gh.opened_file = None
+
+    two_level = f"{os.path.basename(os.path.dirname(folder))}/{os.path.basename(folder)}"
+    dpg.set_value("dir_path_repeat", two_level)
+
+    gh.refresh_contents_list()
+
+    for tag in ("z_range_group", "rip_group", "wga_group"):
+        if dpg.does_item_exist(tag):
+            dpg.hide_item(tag)
+
+    dpg.set_value("status_text", "Folder loaded")
+
+folder_picker = FileDialog(
+    callback=folder_selected_callback,
+    dirs_only=True,
+    default_path=".",
+    modal=False,
+    allow_drag=False
+)
+
 with dpg.texture_registry(show=False):
     dpg.add_dynamic_texture(1024, 1024, [1.0] * (1024 * 1024 * 4), tag="dynamic_texture")
 dpg.create_viewport(title='GUI', width=1430, height=1120)
 
 with dpg.window(tag="left_window", label="Controls", pos=(10, 10), width=330, height=200, no_move=True):
-    dpg.add_button(label="Open Folder", callback=open_folder_dialog)
+    dpg.add_button(label="Open Folder", callback=folder_picker.show_file_dialog)
     dpg.add_text("None", tag="dir_path_repeat")
     dpg.add_checkbox(label="Save Meta Data", tag="opt_save_metadata", default_value=True)
     dpg.add_checkbox(label="Save Extracted Traces", tag="opt_save_traces", default_value=True)
